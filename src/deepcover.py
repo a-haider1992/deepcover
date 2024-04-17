@@ -60,6 +60,7 @@ def main():
   parser.add_argument("--testgen-iterations", dest="testgen_iter", default="1",
                     help="to control the testgen iteration", metavar="INT")
   parser.add_argument("--causal", dest='causal', help="causal explanation", action="store_true")
+  parser.add_argument("--grad-cam", dest='grad_cam', help="GradCam method only", action="store_true")
   parser.add_argument("--wsol", dest='wsol_file', help="weakly supervised object localization", metavar="FILE")
   parser.add_argument("--occlusion", dest='occlusion_file', help="to load the occluded images", metavar="FILE")
 
@@ -134,6 +135,7 @@ def main():
   eobj.x_verbosity=int(args.x_verbosity)
   eobj.fnames=fnames
   eobj.occlusion_file=args.occlusion_file
+  eobj.image_size=img_rows
   measures = []
   if not args.measure=='None':
       measures.append(args.measure)
@@ -151,8 +153,11 @@ def main():
 
 
   if args.causal:
-      comp_explain(eobj)
-  else: to_explain(eobj)
+    comp_explain(eobj)
+  elif args.grad_cam:
+    compute_gradcam_maps(eobj)
+  else:
+    to_explain(eobj)
 
 if __name__=="__main__":
   main()
