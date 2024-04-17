@@ -15,7 +15,11 @@ from utils import *
 from to_explain import *
 from comp_explain import *
 
+import logging
+
 def main():
+  logger = logging.getLogger(__name__)
+  logging.basicConfig(filename='logging.log', level=logging.INFO)
   parser=argparse.ArgumentParser(description='To explain neural network decisions' )
   parser.add_argument(
     '--model', dest='model', default='-1', help='the input neural network model (.h5)')
@@ -60,11 +64,14 @@ def main():
   parser.add_argument("--testgen-iterations", dest="testgen_iter", default="1",
                     help="to control the testgen iteration", metavar="INT")
   parser.add_argument("--causal", dest='causal', help="causal explanation", action="store_true")
-  parser.add_argument("--grad-cam", dest='grad_cam', help="GradCam method only", action="store_true")
+  parser.add_argument("--explainable-method", dest='explainable_method', help="Specify your preferred explainability method", type=str, default="GradCam")
   parser.add_argument("--wsol", dest='wsol_file', help="weakly supervised object localization", metavar="FILE")
   parser.add_argument("--occlusion", dest='occlusion_file', help="to load the occluded images", metavar="FILE")
 
   args=parser.parse_args()
+
+  logger.info(args)
+  logger.info(time.strftime("%Y-%m-%d %H:%M:%S"))
 
   img_rows, img_cols, img_channels = int(args.img_rows), int(args.img_cols), int(args.img_channels)
 
@@ -136,6 +143,7 @@ def main():
   eobj.fnames=fnames
   eobj.occlusion_file=args.occlusion_file
   eobj.image_size=img_rows
+  eobj.explainable_method = args.explainable_method
   measures = []
   if not args.measure=='None':
       measures.append(args.measure)
@@ -154,9 +162,11 @@ def main():
 
   if args.causal:
     comp_explain(eobj)
-  elif args.grad_cam:
+  elif args.explainable_method == "GradCam":
+    logger.info("Using GradCAM")
     compute_gradcam_maps(eobj)
   else:
+    logger.info("Using DeepCover")
     to_explain(eobj)
 
 if __name__=="__main__":

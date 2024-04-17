@@ -41,7 +41,7 @@ from sklearn.metrics import auc
 
 import logging
 logger = logging.getLogger(__name__)
-logging.basicConfig(filename='myapp.log', level=logging.INFO)
+logging.basicConfig(filename='logging.log', level=logging.INFO)
 logger.info('Started')
 logger.info('Tensorflow version: %s', tf.__version__)
 

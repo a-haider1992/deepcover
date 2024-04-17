@@ -1,23 +1,9 @@
-# DeepCover: Uncover the Truth Behind AI
+# Common cluster explanations (Deepcover and Traditional approaches - GradCam etc.)
+## Modifications
 
-![alt text](images/deepcover-logo.png)
+Original deepcover code is modified to support other explainability methods. GradCam is supported now, other methods will be added shortly. This provides common explanations pulled from multiple sources of explanations.
 
-DeepCover explains image classifiers using [statistical fault localization](https://www.ecva.net/papers/eccv_2020/papers_ECCV/papers/123730392.pdf) and 
-[causal theory](https://openaccess.thecvf.com/content/ICCV2021/papers/Chockler_Explanations_for_Occluded_Images_ICCV_2021_paper.pdf).
-
-Videos: [ECCV2020](https://www.youtube.com/watch?v=vTyfOBAGm_o), [ICCV2021](https://www.cprover.org/deepcover/iccv2021/iccv2021-talk-compatible.mp4) 
-
-# Install and Setup
-#### Create a clean Docker container with Ubuntu 20.04
-```
-docker run -v ${PWD}:/home -it ubuntu:20.04
-```
-#### Commands
-```
-apt-get update && apt-get install pip git ffmpeg libsm6 libxext6 && pip install matplotlib seaborn tensorflow==2.3.0 keras==2.4.3 numpy==1.18.0 scipy==1.4.1 opencv-python && cd home && git clone https://github.com/theyoucheng/deepcover
-```
-
-# Hello DeepCover
+# Collection of Explainablity methods, including DeepCover and GradCam
 ```
 python ./src/deepcover.py --help
 usage: deepcover.py [-h] [--model MODEL] [--inputs DIR] [--outputs DIR]
@@ -32,8 +18,13 @@ usage: deepcover.py [-h] [--model MODEL] [--inputs DIR] [--outputs DIR]
                     [--testgen-factor FLOAT] [--testgen-size INT]
                     [--testgen-iterations INT] [--causal] [--wsol FILE]
                     [--occlusion FILE]
+                    [--grad-cam BOOL/ACTION]
 ```
 
+## To run GradCam based explaination on your pre-trained model
+```
+python ./src/deepcover.py --model [YOUR_MODEL] --inputs [YOUR_DATA] --outputs [YOUR_OUTPUT_DIR] --grad-cam
+```
 
 ## To start running the Statistical Fault Localization (SFL) based explaining:
 ```
@@ -74,37 +65,3 @@ python src/deepcover.py --model models/gtsrb_backdoor.h5 --input-rows 32 --input
 `--input-rows`    row number for the input image
 
 `--input-cols`    column number for the input image
-
-
-
-# Publications
-```
-@inproceedings{sck2021,
-  AUTHOR    = { Sun, Youcheng
-                and Chockler, Hana
-                and Kroening, Daniel },
-  TITLE     = { Explanations for Occluded Images },
-  BOOKTITLE = { International Conference on Computer Vision (ICCV) },
-  PUBLISHER = { IEEE },
-  PAGES     = { 1234--1243 },
-  YEAR = { 2021 }
-}
-```
-```
-@inproceedings{schk2020,
-AUTHOR = { Sun, Youcheng
-and Chockler, Hana
-and Huang, Xiaowei
-and Kroening, Daniel},
-TITLE = {Explaining Image Classifiers using Statistical Fault Localization},
-BOOKTITLE = {European Conference on Computer Vision (ECCV)},
-YEAR = { 2020 }
-}
-```
-
-# Miscellaneous
-[Roaming Panda Dataset](https://github.com/theyoucheng/deepcover/tree/master/roaming-panda/)
-
-[Photo Bombing Dataset](https://github.com/theyoucheng/deepcover/tree/master/data/photobombing/)
-
-[DeepCover Site](https://www.cprover.org/deepcover/)
