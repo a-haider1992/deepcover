@@ -64,7 +64,7 @@ def main():
   parser.add_argument("--testgen-iterations", dest="testgen_iter", default="1",
                     help="to control the testgen iteration", metavar="INT")
   parser.add_argument("--causal", dest='causal', help="causal explanation", action="store_true")
-  parser.add_argument("--explainable-method", dest='explainable_method', help="Specify your preferred explainability method", type=str, default="GradCam")
+  parser.add_argument("--explainable-method", dest='explainable_method', help="Specify your preferred explainability method", type=str, default=None)
   parser.add_argument("--wsol", dest='wsol_file', help="weakly supervised object localization", metavar="FILE")
   parser.add_argument("--occlusion", dest='occlusion_file', help="to load the occluded images", metavar="FILE")
 
@@ -165,7 +165,7 @@ def main():
   elif args.explainable_method == "GradCam":
     logger.info("Using GradCAM")
     compute_gradcam_maps(eobj)
-  else:
+  elif args.explainable_method == "DeepCover":
     logger.info("Using DeepCover")
     to_explain(eobj)
 

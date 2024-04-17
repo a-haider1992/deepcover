@@ -18,28 +18,20 @@ usage: deepcover.py [-h] [--model MODEL] [--inputs DIR] [--outputs DIR]
                     [--testgen-factor FLOAT] [--testgen-size INT]
                     [--testgen-iterations INT] [--causal] [--wsol FILE]
                     [--occlusion FILE]
-                    [--grad-cam BOOL/ACTION]
+                    [--explainable-method STR] 
 ```
 
-## To run GradCam based explaination on your pre-trained model
+## To run GradCam based explanation on your pre-trained model
 ```
-python ./src/deepcover.py --model [YOUR_MODEL] --inputs [YOUR_DATA] --outputs [YOUR_OUTPUT_DIR] --grad-cam
+python ./src/deepcover.py --model [YOUR_MODEL] --inputs [YOUR_DATA] --outputs [YOUR_OUTPUT_DIR] --explainable-method GradCam
 ```
 
-## To start running the Statistical Fault Localization (SFL) based explaining:
+## To run the DeepCover based explanation on your pre-trained model:
 ```
-python ./src/deepcover.py --mobilenet-model --inputs data/panda --outputs outs --testgen-size 200
+python ./src/deepcover.py --model [YOUR_MODEL] --inputs [YOUR_DATA] --outputs [YOUR_OUTPUT_DIR] --explainable-method DeepCover
 ```
-`--mobilenet-model`   pre-trained keras model 
 
-`--inputs`            input images folder
-
-`--outputs`           output images folder
-
-`--testgen-size`      the number of input mutants to generate for explaining (by default, it is 2,000) 
-
-
-## More options
+## Other options
 ```
 python src/deepcover.py --mobilenet-model --inputs data/panda/ --outputs outs --measures tarantula zoltar --x-verbosity 1 --masking-value 0
 ```
