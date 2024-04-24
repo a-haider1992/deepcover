@@ -38,13 +38,61 @@ from keras.applications.mobilenet import MobileNet
 from imblearn.over_sampling import RandomOverSampler
 from sklearn.metrics import roc_curve
 from sklearn.metrics import auc
+from skimage.segmentation import slic
+from skimage.color import gray2rgb
+from sklearn.linear_model import Ridge
+from sklearn.preprocessing import Normalizer
+from lime import lime_image
+from skimage.segmentation import mark_boundaries
 
 import logging
 logger = logging.getLogger(__name__)
-logging.basicConfig(filename='logging.log', level=logging.INFO)
-logger.info('Started')
-logger.info('Tensorflow version: %s', tf.__version__)
+# logging.basicConfig(filename='logging.log', level=logging.INFO)
+# logger.info('Started')
+# logger.info('Tensorflow version: %s', tf.__version__)
+def get_lime_explanation(img_path, model, image_size):
+  logger.info('get_lime_explanation')
+  
+  def generate_heatmap_image(img_boundry1, img_boundry2):
+      # Create a heatmap image where positive features are labeled as 1 and negative features as 2
+      heatmap_image = np.zeros_like(img_boundry1, dtype=np.uint8)  # Ensure the dtype is uint8
+      heatmap_image[img_boundry1 > 0] = 255  # Set positive features to white
+      heatmap_image[img_boundry2 > 0] = 150  # Set negative features to gray
+      return heatmap_image
+  
+  # Read and preprocess the image
+  img = cv2.imread(img_path)
+  img = cv2.resize(img, (image_size, image_size))
+  img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # Convert BGR to RGB
+  img_tensor = tf.convert_to_tensor(img, dtype=tf.float32)
+  img_array = np.expand_dims(img_tensor, axis=0)
 
+  # Configure TensorFlow to use GPU if available
+  if tf.test.is_gpu_available():
+      logger.info('GPU is available. Using GPU for LimeImageExplainer.')
+      device = "/gpu:0"
+  else:
+      logger.info('GPU is not available. Using CPU for LimeImageExplainer.')
+      device = "/cpu:0"
+  
+  # Create the LimeImageExplainer
+  with tf.device(device):
+      explainer = lime_image.LimeImageExplainer()
+  
+  # Explain the instance
+  explanation = explainer.explain_instance(img_array[0], model.predict, top_labels=3, hide_color=0, num_samples=1000)
+
+  # Get the image and mask for the top label with positive-only and negative features
+  temp, mask = explanation.get_image_and_mask(explanation.top_labels[0], positive_only=True, num_features=5, hide_rest=False)
+  img_boundry1 = mark_boundaries(temp / 2 + 0.5, mask)
+
+  temp, mask = explanation.get_image_and_mask(explanation.top_labels[0], positive_only=False, num_features=10, hide_rest=False)
+  img_boundry2 = mark_boundaries(temp / 2 + 0.5, mask)
+
+  # Generate the heatmap image
+  heatmap_image = generate_heatmap_image(img_boundry1, img_boundry2)
+
+  return heatmap_image
 
 def get_img_array(img_path, size):
   img = keras.utils.load_img(img_path, target_size=(size, size))
@@ -94,7 +142,6 @@ def make_gradcam_heatmap(img_array, model, last_conv_layer_name, pred_index=None
   return heatmap.numpy()
 
 def compute_gradcam(img_path, heatmap, activation_thresh, image_size, alpha=0.4):
-  logger.info('compute_gradcam')
   # Load the original image
   #img = keras.utils.load_img(img_path)
   img = tf.squeeze(get_img_array(img_path, size=image_size))
@@ -108,6 +155,15 @@ def compute_gradcam(img_path, heatmap, activation_thresh, image_size, alpha=0.4)
   jet_colors = jet(np.arange(256))[:, :3]
   jet_heatmap = jet_colors[heatmap]
 
+  jet_heatmap = keras.utils.array_to_img(jet_heatmap)
+  jet_heatmap = jet_heatmap.resize((image_size, image_size))
+  #heatmap_im = cv2.resize(heatmap, (image_size, image_size));
+  jet_heatmap = keras.utils.img_to_array(jet_heatmap)
+
+  # Superimpose the heatmap on original image
+  superimposed_img = jet_heatmap * alpha + img
+  superimposed_img = keras.utils.array_to_img(superimposed_img)
+
   CV2_img = cv2.imread(img_path)
   CV2_img = cv2.resize(CV2_img,(image_size, image_size))
   activation_threhold = activation_thresh
@@ -117,7 +173,7 @@ def compute_gradcam(img_path, heatmap, activation_thresh, image_size, alpha=0.4)
   img_fg = cv2.bitwise_and(CV2_img,CV2_img,mask = heatmask)
 
   # subtracted_img = CV2_img - jet_heatmap
-  return heatmask, img_fg
+  return heatmask, img_fg, superimposed_img
 
 def RG_sal_maps(image_path, image_size, model, activation_thresh=75):
   # Prepare image
@@ -125,10 +181,11 @@ def RG_sal_maps(image_path, image_size, model, activation_thresh=75):
 
   # Generate class activation heatmap
   heatmap = make_gradcam_heatmap(img_array, model, 'block5_conv3')
+  lime_map = get_lime_explanation(image_path, model, image_size=image_size)
 
   # Display heatmap
-  heatmask, bitwise_map = compute_gradcam(image_path, heatmap, activation_thresh=activation_thresh, image_size=image_size)
-  return heatmask, bitwise_map
+  heatmask, bitwise_map, superimposed_map = compute_gradcam(image_path, heatmap, activation_thresh=activation_thresh, image_size=image_size)
+  return bitwise_map, superimposed_map, lime_map
 
 def compute_gradcam_maps(eobj, operation="BitwiseAND"):
   '''
@@ -139,26 +196,54 @@ def compute_gradcam_maps(eobj, operation="BitwiseAND"):
   logger.info('Generating GradCAM maps for all images')
   output_dir = eobj.outputs
   THIS_DIR = os.getcwd()
-  THIS_DIR = os.path.join(THIS_DIR, output_dir, "gradcam")
+  THIS_DIR = os.path.join(THIS_DIR, output_dir, eobj.explainable_method)
   if not os.path.exists(THIS_DIR):
     os.mkdir(THIS_DIR)
 
-  for file in tqdm(all_dirs, desc="Computing GradCAM maps"):
-    heatmask, bitwise_map = RG_sal_maps(file, eobj.image_size, model)
+  for file in tqdm(all_dirs, desc="Computing maps"):
+    bitwise_map, superimposed_map, lime_map = RG_sal_maps(file, eobj.image_size, model)
     # class label
     class_name = file.split("/")[2]
     file_path = os.path.join(THIS_DIR, class_name)
     if not os.path.exists(file_path):
       os.mkdir(file_path)
-    file_name_bitwise = "bitwiseAND_" + file.split("/")[-1]
+    file_name_bitwise = "Bitwise_" + class_name +"_"+ file.split("/")[-1]
     file_name = os.path.join(file_path, file_name_bitwise)
-    # print(f"Writing file {file_name}")
-    logger.info(f"Writing gradcam map for file {file_name}")
+
+    file_name_super = "Superimposed_" + class_name +"_"+ file.split("/")[-1]
+    file_name_super = os.path.join(file_path, file_name_super)
+
+    file_name_lime = "Lime_" + class_name +"_"+ file.split("/")[-1]
+    file_name_lime = os.path.join(file_path, file_name_lime)
+
+    logger.info('Saving Bitwise activation map for %s', file_name)
+    logger.info('Saving Superimposed activation map for %s', file_name_super)
+    logger.info('Saving Lime explanation for %s', file_name_lime)
+
     try:
       cv2.imwrite(file_name, bitwise_map)
     except Exception as e:
-      print(f'Exception {e} while writing file {file}!')
-      continue
+      print(f'Exception {e} while writing file {file_name}!')
+    
+    try:
+      superimposed_map.save(file_name_super)
+    except Exception as e:
+      print(f'Exception {e} while writing file {file_name_super}!')
+    
+    try:
+      cv2.imwrite(file_name_lime, lime_map)
+    except Exception as e:
+      print(f'Exception {e} while writing file {file_name_lime}!')
+    
+    continue
+    
+    # try:
+    #   cv2.imwrite(file_name, bitwise_map)
+    #   cv2.imwrite(file_name_super, superimposed_map)
+    #   cv2.imwrite(file_name_lime, lime_map)
+    # except Exception as e:
+    #   print(f'Exception {e} while writing file {file}!')
+    #   continue
 
 def to_explain(eobj):
   print ('\n[To explain: SFL (Software Fault Localization) is used]')
@@ -237,7 +322,7 @@ def to_explain(eobj):
     # di = di + '/{0}'.format(class_name)
     dii=di+'/{0}'.format(str(datetime.now()).replace(' ', '-'))
     dii=dii.replace(':', '-')
-    os.system('mkdir -p {0}'.format(dii))
+    os.system('mkdir -p {0}'.format(dii+"_"+class_name))
     for measure in eobj.measures:
       print ('  #### [Measuring: {0} is used]'.format(measure))
       ranking_i, spectrum=to_rank(selement, measure)

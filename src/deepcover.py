@@ -6,6 +6,7 @@ from keras.applications import inception_v3, mobilenet, xception
 from keras.models import load_model
 import matplotlib.pyplot as plt
 import csv
+import cv2
 
 import argparse
 import os
@@ -70,7 +71,7 @@ def main():
 
   args=parser.parse_args()
 
-  logger.info(args)
+  # logger.info(args)
   logger.info(time.strftime("%Y-%m-%d %H:%M:%S"))
 
   img_rows, img_cols, img_channels = int(args.img_rows), int(args.img_cols), int(args.img_channels)
@@ -159,15 +160,123 @@ def main():
           boxes[row[0]]=[int(row[1]), int(row[2]), int(row[3]), int(row[4])]
       eobj.boxes=boxes
 
+  def preprocess():
+    fnames=[]
+    root = os.path.dirname(os.path.dirname(__file__))
+    if args.inputs!='-1':
+      for path, subdirs, files in os.walk(args.inputs):
+        for subdir in subdirs:
+          # class_name = subdir.split("_")[-1] if "_" in subdir else "unknown"
+          direc_name = os.path.join(path, subdir)
+          direcs = os.listdir(direc_name)
+          for direc in direcs:
+            if direc == "tarantula":
+              tarantula_path = os.path.join(direc_name, direc)
+              tarantula_files = os.listdir(tarantula_path)
+              for tarantula_file in tarantula_files:
+                if "heatmap" in tarantula_file:
+                  class_name = tarantula_file.split("_")[-1].split(".")[0]
+                if "explanation-found" in tarantula_file:
+                  fname=(os.path.join(root, tarantula_path, tarantula_file))
+                  obj = {"fname": fname, "class": class_name, "folder_name": subdir}
+                  fnames.append(obj)
 
-  if args.causal:
-    comp_explain(eobj)
-  elif args.explainable_method == "GradCam":
-    logger.info("Using GradCAM")
-    compute_gradcam_maps(eobj)
-  elif args.explainable_method == "DeepCover":
-    logger.info("Using DeepCover")
-    to_explain(eobj)
+    patch_size = (64, 64)
+    num_clusters = 1
+    # Convert the image to grayscale
+
+    with open("patch-data.txt", "w") as f:
+      for files in fnames:
+        image_path = files["fname"]
+        class_name = files["class"]
+        folder_name = files["folder_name"]
+        # print("class_name: ", class_name)
+        image = cv2.imread(image_path)
+        gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+      
+        # Apply clustering algorithm to segment the image
+        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0)
+        _, labels, centers = cv2.kmeans(np.float32(gray_image.reshape(-1, 1)), num_clusters, None, criteria, 5, cv2.KMEANS_RANDOM_CENTERS)
+
+        # pdb.set_trace()
+        
+        # Convert the labels to uint8 for visualization
+        segmented_image = np.uint8(labels.reshape(gray_image.shape))
+        
+        # # Find contours in the segmented image
+        contours, _ = cv2.findContours(segmented_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        # Extract patches for each contour (ROI)
+        roi_patches = []
+        for contour in contours:
+            # Get the bounding box of the contour
+            x, y, w, h = cv2.boundingRect(contour)
+            
+            # Extract the patch from the original image
+            roi_patch = image[y:y+h, x:x+w]
+            
+            # Resize the patch to the specified patch size
+            roi_patch = cv2.resize(roi_patch, patch_size)
+            
+            # Add the patch to the list of ROI patches
+            roi_patches.append(roi_patch)
+        
+        # desired_width = 224
+        # desired_height = 224
+
+        # # Find contours in the segmented image
+        # contours, _ = cv2.findContours(segmented_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # # # Extract patches for each contour (ROI)
+        # roi_patches = []
+        
+        # for contour in contours:
+        #     if cv2.contourArea(contour) > 0:
+        #       M = cv2.moments(contour)
+        #       if M["m00"] != 0:
+        #           centroid_x = int(M["m10"] / M["m00"])
+        #           centroid_y = int(M["m01"] / M["m00"])
+                  
+        #           # Calculate the coordinates for the top-left corner of the bounding box
+        #           x = centroid_x - desired_width // 2  # Center the patch around the centroid
+        #           y = centroid_y - desired_height // 2  # Center the patch around the centroid
+                  
+        #           # Extract the patch from the original image
+        #           roi_patch = image[y:y+desired_height, x:x+desired_width]
+        #           # pdb.set_trace()
+        #           # Resize the patch to the specified patch size (optional)
+        #           if roi_patch is not None and roi_patch.size != 0:
+        #             roi_patch = cv2.resize(roi_patch, patch_size)
+                  
+        #           # Add the patch to the list of ROI patches
+        #           roi_patches.append(roi_patch)
+
+
+        # if not os.path.exists(eobj.outputs):
+        os.makedirs(os.path.join(eobj.outputs, folder_name))
+
+        # cv2.imwrite("{0}/segmented_image.jpg".format(os.path.join(eobj.outputs, class_name, folder_name)), segmented_image)
+        cv2.imwrite("{0}/original_image.jpg".format(os.path.join(eobj.outputs, folder_name)), image)
+
+        for i, patch in enumerate(roi_patches):
+          patch = cv2.resize(patch, (224, 224))
+          patch_name = "{0}/{1}.jpg".format(os.path.join(eobj.outputs, folder_name), i)
+          cv2.imwrite(patch_name, patch)
+          f.write("{0},{1},{2}\n".format(folder_name, class_name, patch_name))
+        # print("Done with: ", folder_name)
+        
+  preprocess()
+
+  # if args.causal:
+  #   comp_explain(eobj)
+  # elif args.explainable_method == "GradCam" or args.explainable_method == "Lime":
+  #   logger.info("Using GradCam or Lime")
+  #   compute_gradcam_maps(eobj)
+  # elif args.explainable_method == "DeepCover":
+  #   logger.info("Using DeepCover")
+  #   to_explain(eobj)
+
+
 
 if __name__=="__main__":
   main()
