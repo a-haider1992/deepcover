@@ -19,6 +19,7 @@ from comp_explain import *
 from RPN import *
 
 import logging
+import random as rng
 
 def main():
   logger = logging.getLogger(__name__)
@@ -256,17 +257,59 @@ def main():
 
         cv2.imwrite("{0}/original_image.jpg".format(os.path.join(eobj.outputs, folder_name)), image)
         
-        roi_patches, _, _ = RPN(image)
+        # roi_patches, _, _ = RPN(image)
 
-        for i, patch in enumerate(roi_patches):
-          patch_name = "{0}/{1}.jpg".format(os.path.join(eobj.outputs, folder_name), i)
-          # make patch compatible with cv2
-          patch = cv2.cvtColor(patch, cv2.COLOR_BGR2RGB)
-          patch = cv2.resize(patch, patch_size)
-          cv2.imwrite(patch_name, patch)
-          f.write("{0},{1},{2}\n".format(folder_name, class_name, patch_name))
+        # for i, patch in enumerate(roi_patches):
+        #   patch_name = "{0}/{1}.jpg".format(os.path.join(eobj.outputs, folder_name), i)
+        #   # make patch compatible with cv2
+        #   patch = cv2.cvtColor(patch, cv2.COLOR_BGR2RGB)
+        #   patch = cv2.resize(patch, patch_size)
+        #   cv2.imwrite(patch_name, patch)
+        #   f.write("{0},{1},{2}\n".format(folder_name, class_name, patch_name))
 
         
+        ## Convex Hull based segmentation
+        # Detect edges using Canny
+        threshold = 80
+        # Noise reduction parameter - larger value means more noise reduction - smaller contours are considered noise
+        min_contour_area = 1000
+        canny_output = cv2.Canny(gray_image, threshold, threshold * 2)
+        # Find contours
+        contours, _ = cv2.findContours(canny_output, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        # Find the convex hull object for each contour
+        hull_list = []
+        for i in range(len(contours)):
+          hull = cv2.convexHull(contours[i])
+          hull_list.append(hull)
+        # Draw contours + hull results
+        drawing = np.zeros((canny_output.shape[0], canny_output.shape[1], 3), dtype=np.uint8)
+        for i in range(len(contours)):
+          color = (rng.randint(0,256), rng.randint(0,256), rng.randint(0,256))
+          cv2.drawContours(drawing, contours, i, color)
+          cv2.drawContours(drawing, hull_list, i, color)
+          # cv2.imwrite("{0}/contours.jpg".format(os.path.join(eobj.outputs, folder_name)), drawing)
+          # roi_patches.append(drawing)
+
+          # Extract patches for each contour (ROI)
+          for contour in hull_list:
+            # Get the bounding box of the contour
+            x, y, w, h = cv2.boundingRect(contour)
+            
+            # Calculate the area of the contour
+            contour_area = cv2.contourArea(contour)
+            
+            # Ignore contours that are too small
+            if contour_area < min_contour_area:
+              continue
+            
+            # Extract the patch from the original image
+            roi_patch = image[y:y+h, x:x+w]
+            
+            # Resize the patch to the specified patch size
+            roi_patch = cv2.resize(roi_patch, patch_size)
+            
+            # Add the patch to the list of ROI patches
+            roi_patches.append(roi_patch)
         ## Kmeans clustering
         # roi_patches = []
         # os.makedirs(os.path.join(eobj.outputs, "Kmeans", folder_name))
@@ -303,24 +346,25 @@ def main():
         # # cv2.imwrite("{0}/segmented_image.jpg".format(os.path.join(eobj.outputs, class_name, folder_name)), segmented_image)
         # cv2.imwrite("{0}/original_image.jpg".format(os.path.join(eobj.outputs, "Kmeans", folder_name)), image)
 
-        # for i, patch in enumerate(roi_patches):
-        #   patch = cv2.resize(patch, patch_size)
-        #   patch_name = "{0}/{1}.jpg".format(os.path.join(eobj.outputs, "Kmeans", folder_name), i)
-        #   cv2.imwrite(patch_name, patch)
+        print(f"Found {len(roi_patches)} objects in the image")
+        for i, patch in enumerate(roi_patches):
+          patch = cv2.resize(patch, patch_size)
+          patch_name = "{0}/{1}.jpg".format(os.path.join(eobj.outputs, folder_name), i)
+          cv2.imwrite(patch_name, patch)
         #   f.write("{0},{1},{2}\n".format(folder_name, class_name, patch_name))
         
-  # preprocess()
+  preprocess()
 
   # RPN("original_image.jpg")
 
-  if args.causal:
-    comp_explain(eobj)
-  elif args.explainable_method == "GradCam" or args.explainable_method == "Lime":
-    logger.info("Using GradCam or Lime")
-    compute_gradcam_maps(eobj)
-  elif args.explainable_method == "DeepCover":
-    logger.info("Using DeepCover")
-    to_explain(eobj)
+  # if args.causal:
+  #   comp_explain(eobj)
+  # elif args.explainable_method == "GradCam" or args.explainable_method == "Lime":
+  #   logger.info("Using GradCam or Lime")
+  #   compute_gradcam_maps(eobj)
+  # elif args.explainable_method == "DeepCover":
+  #   logger.info("Using DeepCover")
+  #   to_explain(eobj)
 
 
 

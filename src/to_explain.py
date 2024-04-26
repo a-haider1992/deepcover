@@ -271,7 +271,7 @@ def to_explain(eobj):
       f = open(di+"/wsol-results.txt", "a")
       f.write('input_name   x_method    intersection_with_groundtruth\n')
       f.close()
-  class_name = None
+  class_name = "class_name"
 
   for i in range(0, len(eobj.inputs)):
     x=eobj.inputs[i]
@@ -280,11 +280,11 @@ def to_explain(eobj):
 
     print ('\n[Input {2}: {0} / Output Label (to Explain): {1}]'.format(eobj.fnames[i], y, i))
 
-    if eobj.fnames[i].split("/")[2] is not None:
-        class_name = eobj.fnames[i].split("/")[2]
-        print ('  #### [Target Class: {0}]'.format(class_name))
-    else:
-        print ('  ### Target class not found...')
+    # if eobj.fnames[i].split("/")[2] is not None:
+    #     class_name = eobj.fnames[i].split("/")[2]
+    #     print ('  #### [Target Class: {0}]'.format(class_name))
+    # else:
+    #     print ('  ### Target class not found...')
 
     ite=0
     reasonable_advs=False
