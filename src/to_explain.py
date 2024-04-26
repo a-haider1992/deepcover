@@ -44,6 +44,8 @@ from sklearn.linear_model import Ridge
 from sklearn.preprocessing import Normalizer
 from lime import lime_image
 from skimage.segmentation import mark_boundaries
+import torch
+import torch.nn as nn
 
 import logging
 logger = logging.getLogger(__name__)
@@ -246,19 +248,11 @@ def compute_gradcam_maps(eobj, operation="BitwiseAND"):
     #   continue
 
 def to_explain(eobj):
-  # Set GPU device
-  pdb.set_trace()
-  physical_devices = tf.config.list_physical_devices('GPU')
-  if len(physical_devices) > 0:
-    tf.config.experimental.set_memory_growth(physical_devices[0], True)
-    tf.config.experimental.set_visible_devices(physical_devices[0], 'GPU')
-  else:
-    print("No GPU devices found. Running on CPU.")
-
   print ('\n[To explain: SFL (Software Fault Localization) is used]')
   print ('  ### [Measures: {0}]'.format(eobj.measures))
   logger.info('To explain: SFL (Software Fault Localization) is used')
   model=eobj.model
+  
   ## to create output DI
   #print ('\n[Create output folder: {0}]'.format(eobj.outputs))
   di=eobj.outputs
@@ -363,3 +357,103 @@ def to_explain(eobj):
               f.write('{0} {1} {2}\n'.format(eobj.fnames[i], measure, ret))
               f.close()
 
+def to_explain_V2(eobj):
+    print('\n[To explain: SFL (Software Fault Localization) is used]')
+    print('  ### [Measures: {0}]'.format(eobj.measures))
+    model = eobj.model
+
+    # Use both available GPUs if possible
+    if torch.cuda.device_count() > 1:
+        print("Using", torch.cuda.device_count(), "GPUs!")
+        model = nn.DataParallel(model)
+
+    model.cuda()
+
+    di = eobj.outputs
+
+    try:
+        os.makedirs(di, exist_ok=True)
+    except Exception as e:
+        print("Error creating output directory:", e)
+
+    if eobj.boxes is not None:
+        with open(os.path.join(di, "wsol-results.txt"), "a") as f:
+            f.write('input_name   x_method    intersection_with_groundtruth\n')
+
+    class_name = "class_name"
+
+    for i, x in enumerate(eobj.inputs):
+        x_tensor = torch.tensor(x, dtype=torch.float32).unsqueeze(0).cuda()
+        with torch.no_grad():
+            res = model(x_tensor)
+        y = torch.argsort(res.squeeze(), descending=True)[:eobj.top_classes].cpu().numpy()
+
+        print('\n[Input {2}: {0} / Output Label (to Explain): {1}]'.format(eobj.fnames[i], y, i))
+
+        ite = 0
+        reasonable_advs = False
+        while ite < eobj.testgen_iter:
+            print('  #### [Start generating SFL spectra...]')
+            start = time.time()
+            ite += 1
+
+            passing, failing = spectra_sym_gen(eobj, x, y[-1:], adv_value=eobj.adv_value, testgen_factor=eobj.testgen_factor, testgen_size=eobj.testgen_size)
+            spectra = []
+            num_advs = len(failing)
+            adv_xs = []
+            adv_ys = []
+            for e in passing:
+                adv_xs.append(e)
+                adv_ys.append(0)
+            for e in failing:
+                adv_xs.append(e)
+                adv_ys.append(-1)
+            tot = len(adv_xs)
+
+            adv_part = num_advs * 1. / tot
+            end = time.time()
+            print('  #### [SFL spectra generation DONE: passing {0:.2f} / failing {1:.2f}, total {2}; time: {3:.0f} seconds]'.format(1 - adv_part, adv_part, tot, end - start))
+
+            if adv_part <= eobj.adv_lb:
+                print('  #### [too few failing tests: SFL explanation aborts]')
+                continue
+            elif adv_part >= eobj.adv_ub:
+                print('  #### [too few many tests: SFL explanation aborts]')
+                continue
+            else:
+                reasonable_advs = True
+                break
+
+        if not reasonable_advs:
+            continue
+
+        selement = sbfl_elementt(x, 0, adv_xs, adv_ys, model, eobj.fnames[i])
+        dii = os.path.join(di, str(datetime.now()).replace(' ', '-').replace(':', '-'))
+        os.makedirs(dii + "_" + class_name, exist_ok=True)
+        for measure in eobj.measures:
+            print('  #### [Measuring: {0} is used]'.format(measure))
+            ranking_i, spectrum = to_rank(selement, measure)
+            selement.y = y
+            diii = os.path.join(dii, measure)
+            os.makedirs(diii, exist_ok=True)
+            np.savetxt(os.path.join(diii, 'ranking_{0}.txt'.format(class_name)), ranking_i, fmt='%s')
+
+            # Plot the heatmap
+            spectrum = np.array((spectrum / spectrum.max()) * 255)
+            gray_img = np.array(spectrum[:, :, 0], dtype='uint8')
+            heatmap_img = cv2.applyColorMap(gray_img, cv2.COLORMAP_JET)
+            if x.shape[2] == 1:
+                x3d = np.repeat(x[:, :, 0][:, :, np.newaxis], 3, axis=2)
+            else:
+                x3d = x
+            fin = cv2.addWeighted(heatmap_img, 0.7, x3d, 0.3, 0)
+            plt.rcParams["axes.grid"] = False
+            plt.imshow(cv2.cvtColor(fin, cv2.COLOR_BGR2RGB))
+            plt.savefig(os.path.join(diii, 'heatmap_{0}_{1}.png'.format(measure, class_name if class_name else 'unknown')))
+
+            # Plot the top ranked pixels
+            if not eobj.text_only:
+                ret = top_plot(selement, ranking_i, diii, measure, eobj)
+                if eobj.boxes is not None:
+                    with open(os.path.join(di, "wsol-results.txt"), "a") as f:
+                        f.write('{0} {1} {2}\n'.format(eobj.fnames[i], measure, ret))

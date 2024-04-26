@@ -353,18 +353,19 @@ def main():
           cv2.imwrite(patch_name, patch)
         #   f.write("{0},{1},{2}\n".format(folder_name, class_name, patch_name))
         
-  preprocess()
+  # preprocess()
 
   # RPN("original_image.jpg")
 
-  # if args.causal:
-  #   comp_explain(eobj)
-  # elif args.explainable_method == "GradCam" or args.explainable_method == "Lime":
-  #   logger.info("Using GradCam or Lime")
-  #   compute_gradcam_maps(eobj)
-  # elif args.explainable_method == "DeepCover":
-  #   logger.info("Using DeepCover")
-  #   to_explain(eobj)
+  # set GPUs
+  if args.causal:
+    comp_explain(eobj)
+  elif args.explainable_method == "GradCam" or args.explainable_method == "Lime":
+    logger.info("Using GradCam or Lime")
+    compute_gradcam_maps(eobj)
+  elif args.explainable_method == "DeepCover":
+    logger.info("Using DeepCover")
+    to_explain_V2(eobj)
 
 
 
