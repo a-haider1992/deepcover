@@ -11,10 +11,12 @@ import cv2
 import argparse
 import os
 import numpy as np
+import shutil
 
 from utils import *
 from to_explain import *
 from comp_explain import *
+from RPN import *
 
 import logging
 
@@ -176,14 +178,27 @@ def main():
               for tarantula_file in tarantula_files:
                 if "heatmap" in tarantula_file:
                   class_name = tarantula_file.split("_")[-1].split(".")[0]
-                if "explanation-found" in tarantula_file:
+                # if "explanation-found" in tarantula_file:
+                if tarantula_file == "tarantula-5.jpg":
                   fname=(os.path.join(root, tarantula_path, tarantula_file))
                   obj = {"fname": fname, "class": class_name, "folder_name": subdir}
                   fnames.append(obj)
 
-    patch_size = (64, 64)
-    num_clusters = 1
+    patch_size = (224, 224)
+    num_clusters = 2
     # Convert the image to grayscale
+
+    directory_to_delete = eobj.outputs
+
+    # Attempt to delete the directory
+    try:
+        # Use shutil.rmtree() to delete the directory and all its contents recursively
+        shutil.rmtree(directory_to_delete)
+        print(f"Directory '{directory_to_delete}' deleted successfully.")
+    except FileNotFoundError:
+        print(f"Directory '{directory_to_delete}' does not exist.")
+    except Exception as e:
+        print(f"An error occurred while deleting directory '{directory_to_delete}': {e}")
 
     with open("patch-data.txt", "w") as f:
       for files in fnames:
@@ -193,88 +208,119 @@ def main():
         # print("class_name: ", class_name)
         image = cv2.imread(image_path)
         gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-      
-        # Apply clustering algorithm to segment the image
-        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0)
-        _, labels, centers = cv2.kmeans(np.float32(gray_image.reshape(-1, 1)), num_clusters, None, criteria, 5, cv2.KMEANS_RANDOM_CENTERS)
 
-        # pdb.set_trace()
-        
-        # Convert the labels to uint8 for visualization
-        segmented_image = np.uint8(labels.reshape(gray_image.shape))
-        
-        # # Find contours in the segmented image
-        contours, _ = cv2.findContours(segmented_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        # Extract patches for each contour (ROI)
-        roi_patches = []
-        for contour in contours:
-            # Get the bounding box of the contour
-            x, y, w, h = cv2.boundingRect(contour)
-            
-            # Extract the patch from the original image
-            roi_patch = image[y:y+h, x:x+w]
-            
-            # Resize the patch to the specified patch size
-            roi_patch = cv2.resize(roi_patch, patch_size)
-            
-            # Add the patch to the list of ROI patches
-            roi_patches.append(roi_patch)
-        
-        # desired_width = 224
-        # desired_height = 224
-
-        # # Find contours in the segmented image
-        # contours, _ = cv2.findContours(segmented_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        # # # Extract patches for each contour (ROI)
-        # roi_patches = []
-        
-        # for contour in contours:
-        #     if cv2.contourArea(contour) > 0:
-        #       M = cv2.moments(contour)
-        #       if M["m00"] != 0:
-        #           centroid_x = int(M["m10"] / M["m00"])
-        #           centroid_y = int(M["m01"] / M["m00"])
-                  
-        #           # Calculate the coordinates for the top-left corner of the bounding box
-        #           x = centroid_x - desired_width // 2  # Center the patch around the centroid
-        #           y = centroid_y - desired_height // 2  # Center the patch around the centroid
-                  
-        #           # Extract the patch from the original image
-        #           roi_patch = image[y:y+desired_height, x:x+desired_width]
-        #           # pdb.set_trace()
-        #           # Resize the patch to the specified patch size (optional)
-        #           if roi_patch is not None and roi_patch.size != 0:
-        #             roi_patch = cv2.resize(roi_patch, patch_size)
-                  
-        #           # Add the patch to the list of ROI patches
-        #           roi_patches.append(roi_patch)
-
-
-        # if not os.path.exists(eobj.outputs):
+        # Make directory for each Output folder
         os.makedirs(os.path.join(eobj.outputs, folder_name))
+        
+        previous_row = None
+        start_row = None
+        w, h = patch_size[0], patch_size[1]  
+        roi_patches = []
 
-        # cv2.imwrite("{0}/segmented_image.jpg".format(os.path.join(eobj.outputs, class_name, folder_name)), segmented_image)
+        # Loop through each row of the image
+        # for row_idx, row in enumerate(gray_image):
+        #   # If it's not the first row, compare with the previous row
+
+        #   if previous_row is not None:
+        #       # Check if there's a change in pixel values
+        #       if not (previous_row == row).all():
+        #           # If change detected, extract rectangle along columns
+        #           if start_row is not None:
+        #               end_row = row_idx + h
+        #               if end_row - start_row < h:
+        #                   continue
+        #               # Loop through each column
+        #               cropped_image = gray_image[start_row:end_row, :]
+        #               previous_col = None
+        #               start_col = None
+        #               for col_idx, col in enumerate(cropped_image.T):
+        #                   # If it's not the first column, compare with the previous column
+        #                   if previous_col is not None:
+        #                     # Check if there's a change in pixel values
+        #                     if not (previous_col == col).all():
+        #                         # If change detected, extract rectangle along rows
+        #                         if start_col is not None:
+        #                             end_col = col_idx + w
+        #                             if end_col - start_col < w:
+        #                                 continue
+        #                             extracted_patch = image[start_row:end_row, start_col:end_col]
+        #                             resized_patch = cv2.resize(extracted_patch, patch_size)
+        #                             roi_patches.append(resized_patch)
+        #                             start_col = col_idx + (w // 4)
+        #                   else:
+        #                       start_col = col_idx
+        #                   previous_col = col
+        #           start_row = row_idx + (h // 4)
+        #   # Update previous_row to current row
+        #   previous_row = row
+
         cv2.imwrite("{0}/original_image.jpg".format(os.path.join(eobj.outputs, folder_name)), image)
+        
+        roi_patches, _, _ = RPN(image)
 
         for i, patch in enumerate(roi_patches):
-          patch = cv2.resize(patch, (224, 224))
           patch_name = "{0}/{1}.jpg".format(os.path.join(eobj.outputs, folder_name), i)
+          # make patch compatible with cv2
+          patch = cv2.cvtColor(patch, cv2.COLOR_BGR2RGB)
+          patch = cv2.resize(patch, patch_size)
           cv2.imwrite(patch_name, patch)
           f.write("{0},{1},{2}\n".format(folder_name, class_name, patch_name))
-        # print("Done with: ", folder_name)
-        
-  preprocess()
 
-  # if args.causal:
-  #   comp_explain(eobj)
-  # elif args.explainable_method == "GradCam" or args.explainable_method == "Lime":
-  #   logger.info("Using GradCam or Lime")
-  #   compute_gradcam_maps(eobj)
-  # elif args.explainable_method == "DeepCover":
-  #   logger.info("Using DeepCover")
-  #   to_explain(eobj)
+        
+        ## Kmeans clustering
+        # roi_patches = []
+        # os.makedirs(os.path.join(eobj.outputs, "Kmeans", folder_name))
+      
+        # # Apply clustering algorithm to segment the image
+        # criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0)
+        # _, labels, centers = cv2.kmeans(np.float32(gray_image.reshape(-1, 1)), num_clusters, None, criteria, 5, cv2.KMEANS_RANDOM_CENTERS)
+
+        # # # pdb.set_trace()
+        
+        # # # Convert the labels to uint8 for visualization
+        # segmented_image = np.uint8(labels.reshape(gray_image.shape))
+        
+        # # # Find contours in the segmented image
+        # contours, _ = cv2.findContours(segmented_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        # # Extract patches for each contour (ROI)
+        # for contour in contours:
+        #     # Get the bounding box of the contour
+        #     x, y, w, h = cv2.boundingRect(contour)
+            
+        #     # Extract the patch from the original image
+        #     roi_patch = image[y:y+h, x:x+w]
+            
+        #     # Resize the patch to the specified patch size
+        #     roi_patch = cv2.resize(roi_patch, patch_size)
+            
+        #     # Add the patch to the list of ROI patches
+        #     roi_patches.append(roi_patch)
+
+        # # if not os.path.exists(eobj.outputs):
+        # # os.makedirs(os.path.join(eobj.outputs, folder_name))
+
+        # # cv2.imwrite("{0}/segmented_image.jpg".format(os.path.join(eobj.outputs, class_name, folder_name)), segmented_image)
+        # cv2.imwrite("{0}/original_image.jpg".format(os.path.join(eobj.outputs, "Kmeans", folder_name)), image)
+
+        # for i, patch in enumerate(roi_patches):
+        #   patch = cv2.resize(patch, patch_size)
+        #   patch_name = "{0}/{1}.jpg".format(os.path.join(eobj.outputs, "Kmeans", folder_name), i)
+        #   cv2.imwrite(patch_name, patch)
+        #   f.write("{0},{1},{2}\n".format(folder_name, class_name, patch_name))
+        
+  # preprocess()
+
+  # RPN("original_image.jpg")
+
+  if args.causal:
+    comp_explain(eobj)
+  elif args.explainable_method == "GradCam" or args.explainable_method == "Lime":
+    logger.info("Using GradCam or Lime")
+    compute_gradcam_maps(eobj)
+  elif args.explainable_method == "DeepCover":
+    logger.info("Using DeepCover")
+    to_explain(eobj)
 
 
 

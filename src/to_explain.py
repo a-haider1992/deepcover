@@ -246,6 +246,15 @@ def compute_gradcam_maps(eobj, operation="BitwiseAND"):
     #   continue
 
 def to_explain(eobj):
+  # Set GPU device
+  pdb.set_trace()
+  physical_devices = tf.config.list_physical_devices('GPU')
+  if len(physical_devices) > 0:
+    tf.config.experimental.set_memory_growth(physical_devices[0], True)
+    tf.config.experimental.set_visible_devices(physical_devices[0], 'GPU')
+  else:
+    print("No GPU devices found. Running on CPU.")
+
   print ('\n[To explain: SFL (Software Fault Localization) is used]')
   print ('  ### [Measures: {0}]'.format(eobj.measures))
   logger.info('To explain: SFL (Software Fault Localization) is used')
@@ -253,15 +262,15 @@ def to_explain(eobj):
   ## to create output DI
   #print ('\n[Create output folder: {0}]'.format(eobj.outputs))
   di=eobj.outputs
+
   try:
     os.system('mkdir -p {0}'.format(di))
   except: pass
-
   if not eobj.boxes is None:
+
       f = open(di+"/wsol-results.txt", "a")
       f.write('input_name   x_method    intersection_with_groundtruth\n')
       f.close()
-
   class_name = None
 
   for i in range(0, len(eobj.inputs)):
