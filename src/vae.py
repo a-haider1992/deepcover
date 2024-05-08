@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 import pdb
 from ray import train, tune
-from ray.tune.search.optuna import OptunaSearch
+from torch.utils.data import SubsetRandomSampler
 import optuna
 
 logging.basicConfig(filename='training_vae.log', level=logging.INFO)
@@ -70,10 +70,11 @@ class VAE_1(nn.Module):
 # print("Output shape:", output.shape)
 
 input_dim = (3, 128, 128)  # RGB images
-latent_dim = 300
-learning_rate = 1e-3
-batch_size = 32
-epochs = 50
+# latent_dim = 300
+learning_rate = 1e-4
+# batch_size = 32
+epochs = 1
+max_norm = 1.0
 
 # Initialize TensorBoard writer
 writer_res = SummaryWriter()
@@ -110,12 +111,23 @@ def train_vae(config):
     print(f"Using Latent dim: {latent_dim}")
     
     # Update the batch_size in the dataloader
-    train_dataset = CustomImageDataset(txt_file="fundus_train.txt",root_dir="data", transform=transform)
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    train_dataset = CustomImageDataset(txt_file="fundus_train.txt", root_dir="data", transform=transform)
+    test_dataset = CustomImageDataset(txt_file="fundus_test.txt", root_dir="data", transform=transform)
 
-    test_dataset = CustomImageDataset(txt_file="fundus_test.txt",root_dir="data", transform=transform)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
-    
+    # train_size = len(train_dataset)
+    # test_size = len(test_dataset)
+
+    # train_indices = list(range(train_size))
+    # test_indices = list(range(test_size))
+
+    # train_limit = int(train_size * 0.1)
+    # test_limit = int(test_size * 0.1)
+
+    # pdb.set_trace()
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, num_workers=4, sampler=None)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, num_workers=4, sampler=None)
+
     # Initialize the VAE model
     vae = VAE_1(latent_dim)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -138,6 +150,7 @@ def train_vae(config):
                 loss = loss_function(recon_batch, data, mu, logvar)
                 loss.backward()
                 total_loss += loss.item()
+                nn.utils.clip_grad_norm_(vae.parameters(), max_norm)
                 optimizer.step()
                 
                 if batch_idx % 100 == 0:
