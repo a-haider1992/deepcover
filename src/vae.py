@@ -99,7 +99,7 @@ def loss_function(recon_x, x, mu=None, logvar=None):
     return reconstruction_loss + kl_divergence
 
 # pdb.set_trace()
-dataset = CustomImageDataset(txt_file="fundus.txt",root_dir="data", transform=transform)
+# dataset = CustomImageDataset(txt_file="fundus_train.txt",root_dir="data", transform=transform)
 # dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 # Define the trainable function
 def train_vae(config):
@@ -110,7 +110,11 @@ def train_vae(config):
     print(f"Using Latent dim: {latent_dim}")
     
     # Update the batch_size in the dataloader
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    train_dataset = CustomImageDataset(txt_file="fundus_train.txt",root_dir="data", transform=transform)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+    test_dataset = CustomImageDataset(txt_file="fundus_test.txt",root_dir="data", transform=transform)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
     
     # Initialize the VAE model
     vae = VAE_1(latent_dim)
@@ -126,7 +130,7 @@ def train_vae(config):
     # Training loop
     vae.train()
     for epoch in range(epochs):
-        for batch_idx, data in enumerate(dataloader):
+        for batch_idx, data in enumerate(train_loader):
             data = data[0].to(device)  # Move data to GPU if available
             optimizer.zero_grad()
             recon_batch, mu, logvar = vae(data)
@@ -138,13 +142,32 @@ def train_vae(config):
                 
                 if batch_idx % 100 == 0:
                     print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                        epoch, batch_idx * len(data), len(dataloader.dataset),
-                        100. * batch_idx / len(dataloader), loss.item() / len(data)))
+                        epoch, batch_idx * len(data), len(train_loader.dataset),
+                        100. * batch_idx / len(train_loader), loss.item() / len(data)))
             else:
                 print(f'Input batch shape: {data.shape}')
                 print(f'Reconstructed batch shape: {recon_batch.shape}')
                 raise Exception("Shape of input and reconstructed input does not match!!")
-    return total_loss
+        print('====> Epoch: {} Average loss: {:.4f}'.format(epoch, total_loss / (len(train_loader.dataset) * epochs)))
+    # average_loss = total_loss / (len(train_loader.dataset) * epochs)
+    # Evaluate the trained model
+    vae.eval()
+    total_loss = 0.0
+    with torch.no_grad():
+        for batch_idx, data in enumerate(test_loader):
+            data = data[0].to(device)  # Move data to GPU if available
+            recon_batch, mu, logvar = vae(data)
+            if data.shape == recon_batch.shape:
+                loss = loss_function(recon_batch, data, mu, logvar)
+                total_loss += loss.item()
+            else:
+                print(f'Input batch shape: {data.shape}')
+                print(f'Reconstructed batch shape: {recon_batch.shape}')
+                raise Exception("Shape of input and reconstructed input does not match!!")
+    average_loss = total_loss / len(test_loader.dataset)
+    test_accuracy = 1 - average_loss
+    print(f"Test Accuracy: {test_accuracy}")
+    return average_loss
 
 # Define the search space
 # Define the objective function to optimize
@@ -158,6 +181,7 @@ def objective(trial):
     # Train the VAE model with the specified configuration
     config = {"batch_size": batch_size, "latent_dim": latent_dim}
     loss = train_vae(config)
+    return loss
 
 # Create an Optuna study
 study = optuna.create_study(storage="sqlite:///db.sqlite3", direction="minimize", study_name="vae_study")
