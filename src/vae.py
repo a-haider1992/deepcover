@@ -6,6 +6,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 from dataset import CustomImageDataset
 from torch.utils.data import DataLoader
+import pytorch_ssim
 import time
 import logging
 import matplotlib.pyplot as plt
@@ -73,7 +74,7 @@ input_dim = (3, 128, 128)  # RGB images
 # latent_dim = 300
 learning_rate = 1e-4
 # batch_size = 32
-epochs = 1
+epochs = 2
 max_norm = 1.0
 
 # Initialize TensorBoard writer
@@ -85,11 +86,19 @@ transform = transforms.Compose([
     transforms.Resize([input_dim[1], input_dim[2]]),
     transforms.ToTensor(),
     ])
-
+from piqa import SSIM
+class SSIMLoss(SSIM):
+    def forward(self, x, y):
+        return 1. - super().forward(x, y)
+    
 # Define the loss function
 def loss_function(recon_x, x, mu=None, logvar=None):
     # BCE = nn.BCELoss(reduction='sum')
     MSE = nn.MSELoss(reduction='sum')
+    # pdb.set_trace()
+    # ssim = pytorch_ssim.ssim(recon_x, x, window_size = 11, size_average = True)
+    criterion = SSIMLoss().cuda()
+    ssim_loss = criterion(recon_x, x)
     recon_x = recon_x.view(-1, 3 * 128 * 128)
     x = x.view(-1, 3 * 128 * 128)
     reconstruction_loss = MSE(recon_x, x)
@@ -97,7 +106,7 @@ def loss_function(recon_x, x, mu=None, logvar=None):
     # writer_res.add_scalar('Loss/reconstruction', reconstruction_loss, epoch)
     # writer_res.add_scalar('Loss/kl_divergence', kl_divergence, epoch)
     logging.info(f'Total loss {reconstruction_loss + kl_divergence}')
-    return reconstruction_loss + kl_divergence
+    return reconstruction_loss + kl_divergence + ssim_loss, ssim_loss
 
 # pdb.set_trace()
 # dataset = CustomImageDataset(txt_file="fundus_train.txt",root_dir="data", transform=transform)
@@ -139,6 +148,7 @@ def train_vae(config):
     # Define the optimizer
     optimizer = optim.Adam(vae.parameters(), lr=learning_rate)
     total_loss = 0.0
+    total_ssim = 0.0
     # Training loop
     vae.train()
     for epoch in range(epochs):
@@ -147,7 +157,7 @@ def train_vae(config):
             optimizer.zero_grad()
             recon_batch, mu, logvar = vae(data)
             if data.shape == recon_batch.shape:
-                loss = loss_function(recon_batch, data, mu, logvar)
+                loss, _ = loss_function(recon_batch, data, mu, logvar)
                 loss.backward()
                 total_loss += loss.item()
                 nn.utils.clip_grad_norm_(vae.parameters(), max_norm)
@@ -171,15 +181,17 @@ def train_vae(config):
             data = data[0].to(device)  # Move data to GPU if available
             recon_batch, mu, logvar = vae(data)
             if data.shape == recon_batch.shape:
-                loss = loss_function(recon_batch, data, mu, logvar)
+                loss, ssim = loss_function(recon_batch, data, mu, logvar)
                 total_loss += loss.item()
+                total_ssim += ssim.item()
             else:
                 print(f'Input batch shape: {data.shape}')
                 print(f'Reconstructed batch shape: {recon_batch.shape}')
                 raise Exception("Shape of input and reconstructed input does not match!!")
     average_loss = total_loss / len(test_loader.dataset)
-    test_accuracy = 1 - average_loss
-    print(f"Test Accuracy: {test_accuracy}")
+    average_ssim = total_ssim / len(test_loader.dataset)
+    print(f'====> Test set loss: {average_loss:.4f}')
+    print(f'====> Test set SSIM: {average_ssim:.4f}')
     return average_loss
 
 # Define the search space
@@ -197,10 +209,10 @@ def objective(trial):
     return loss
 
 # Create an Optuna study
-study = optuna.create_study(storage="sqlite:///db.sqlite3", direction="minimize", study_name="vae_study")
+study = optuna.create_study(storage="sqlite:///db.sqlite3", direction="minimize", study_name="vae_study_1")
 
 # Optimize the objective function
-study.optimize(objective, n_trials=5)
+study.optimize(objective, n_trials=10)
 print(f"Best value: {study.best_value} (params: {study.best_params})")
 
 
