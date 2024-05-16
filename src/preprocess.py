@@ -33,20 +33,32 @@ def create_masked_patches(image_path, patch_size):
     height, width, _ = image.shape
 
     patches = []
-    stride = patch_size // 8
+    stride = patch_size // 2
     for y in range(0, height - patch_size + 1, stride):
         for x in range(0, width - patch_size + 1, stride):
             patch = image[y:y+patch_size, x:x+patch_size]
-            # Calculate the size of the black colored square patch
+            total_num_pixels = patch_size * patch_size
+            
+            # Check if the number of pixels with intensity less than 50 is less than 10% of the total pixels
+            if np.sum(patch < 50) > 0.10 * total_num_pixels:
+                continue
+            
+            # Calculate the size of each black colored square patch
             black_patch_size = int(patch_size * 0.2)
-            # Calculate the starting position of the black colored square patch
-            black_patch_start_y = np.random.randint(0, patch_size - black_patch_size + 1)
-            black_patch_start_x = np.random.randint(0, patch_size - black_patch_size + 1)
-            # Create a black colored square patch
-            black_patch = np.zeros_like(patch)
-            black_patch[black_patch_start_y:black_patch_start_y+black_patch_size, black_patch_start_x:black_patch_start_x+black_patch_size] = 255
-            # Overlay the black patch on the original patch
-            patch = cv2.bitwise_or(patch, black_patch)
+            
+            # Generate two random locations for black patches
+            for _ in range(5):
+                # Calculate the starting position of the black colored square patch
+                black_patch_start_y = np.random.randint(0, patch_size - black_patch_size + 1)
+                black_patch_start_x = np.random.randint(0, patch_size - black_patch_size + 1)
+                
+                # Create a black colored square patch
+                black_patch = np.zeros_like(patch)
+                black_patch[black_patch_start_y:black_patch_start_y+black_patch_size, black_patch_start_x:black_patch_start_x+black_patch_size] = 255
+                
+                # Overlay the black patch on the original patch
+                patch = cv2.bitwise_or(patch, black_patch)
+            
             patches.append(patch)
 
     return patches
@@ -109,14 +121,14 @@ def train_test_split():
 
 
 if __name__ == "__main__":
-    image_dir = "../data/Fundus_complete"
-    patch_dir = "/data/Fundus/masked_patches"
-    pdb.set_trace()
-    # if os.path.exists(patch_dir):
-    #     shutil.rmtree(patch_dir)
-    os.makedirs(patch_dir, exist_ok=True)
-    patch_size = 256
-    create_fundus_files(image_dir, patch_dir, patch_size)
+    # image_dir = "../data/Fundus_complete"
+    # patch_dir = "/data/Fundus/masked_patches"
+    # pdb.set_trace()
+    # # if os.path.exists(patch_dir):
+    # #     shutil.rmtree(patch_dir)
+    # os.makedirs(patch_dir, exist_ok=True)
+    # patch_size = 256
+    # create_fundus_files(image_dir, patch_dir, patch_size)
     # os.makedirs(patch_dir)
     # patch_size = 256
     # train_test_split()
@@ -139,11 +151,11 @@ if __name__ == "__main__":
                 # original_image_path = os.path.join(output_dir, f"{image_name}_original.jpg")
                 # cv2.imwrite(original_image_path, cv2.imread(image_path))
 
-    # image_path = "image3.jpg"
-    # patch_size = 128
+    image_path = "image7.jpg"
+    patch_size = 256
 
-    # patches = create_patches(image_path, patch_size)
-    # os.makedirs("patches", exist_ok=True)
-    # for i, patch in enumerate(patches):
-    #     patch_path = f"patches/patch_{i}.jpg"
-    #     cv2.imwrite(patch_path, patch)
+    patches = create_masked_patches(image_path, patch_size)
+    os.makedirs("patches", exist_ok=True)
+    for i, patch in enumerate(patches):
+        patch_path = f"patches/patch_{i}.jpg"
+        cv2.imwrite(patch_path, patch)
