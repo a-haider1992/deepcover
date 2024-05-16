@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import os
 import pdb
+import shutil
 
 def create_patches(image_path, patch_size):
     image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
@@ -9,7 +10,7 @@ def create_patches(image_path, patch_size):
     height, width, _ = image.shape
 
     patches = []
-    stride = patch_size // 2
+    stride = patch_size // 8
     for y in range(0, height - patch_size + 1, stride):
         for x in range(0, width - patch_size + 1, stride):
             patch = image[y:y+patch_size, x:x+patch_size]
@@ -27,21 +28,67 @@ def create_patches(image_path, patch_size):
 
     return patches
 
+def create_masked_patches(image_path, patch_size):
+    image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+    height, width, _ = image.shape
+
+    patches = []
+    stride = patch_size // 8
+    for y in range(0, height - patch_size + 1, stride):
+        for x in range(0, width - patch_size + 1, stride):
+            patch = image[y:y+patch_size, x:x+patch_size]
+            # Calculate the size of the black colored square patch
+            black_patch_size = int(patch_size * 0.2)
+            # Calculate the starting position of the black colored square patch
+            black_patch_start_y = np.random.randint(0, patch_size - black_patch_size + 1)
+            black_patch_start_x = np.random.randint(0, patch_size - black_patch_size + 1)
+            # Create a black colored square patch
+            black_patch = np.zeros_like(patch)
+            black_patch[black_patch_start_y:black_patch_start_y+black_patch_size, black_patch_start_x:black_patch_start_x+black_patch_size] = 255
+            # Overlay the black patch on the original patch
+            patch = cv2.bitwise_or(patch, black_patch)
+            patches.append(patch)
+
+    return patches
+
 def create_fundus_files(image_dir, patch_dir, patch_size):
+    files_written = 0
+    total_patches = 0
     with open("fundus_patches.txt", "w") as f:
         for root, dirs, files in os.walk(image_dir):
             identifier = root.split("/")[-1]
+            files_written = 0
             for filename in files:
+                patch_count_per_image = 0
+                masked_patch_count_per_image = 0
+                patch_written = 0
                 if filename.endswith(".jpg") or filename.endswith(".png"):
                     image_path = os.path.join(root, filename)
                     patches = create_patches(image_path, patch_size)
+                    mask_patches = create_masked_patches(image_path, patch_size)
+                    total_patches += len(patches)
+                    patch_count_per_image += len(patches)
+                    masked_patch_count_per_image += len(mask_patches)
                     image_name = os.path.splitext(filename)[0]
                     output_dir = os.path.join(patch_dir, identifier, image_name)
                     os.makedirs(output_dir, exist_ok=True)
-                    for i, patch in enumerate(patches):
+                    for i, (patch, mask_patch) in enumerate(zip(patches, mask_patches)):
                         patch_path = os.path.join(output_dir, f"patch_{i}.jpg")
-                        cv2.imwrite(patch_path, patch)
-                        f.write(os.path.join(output_dir, f"patch_{i}.jpg") + "," + identifier +"\n")
+                        mask_patch_path = os.path.join(output_dir, f"mask_patch_{i}.jpg")
+                        if cv2.imwrite(patch_path, patch) and cv2.imwrite(mask_patch_path, mask_patch):
+                            f.write(f"{patch_path},{mask_patch_path},{identifier}\n")
+                            files_written += 1
+                            patch_written += 1
+                    # for i, patch in enumerate(patches):
+                    #     patch_path = os.path.join(output_dir, f"patch_{i}.jpg")
+                    #     if cv2.imwrite(patch_path, patch):
+                    #         f.write(os.path.join(output_dir, f"patch_{i}.jpg") + "," + identifier +"\n")
+                    #         files_written += 1
+                    #         patch_written += 1
+        #         assert patch_count_per_image == patch_written, "Number of patches written does not match number of patches per image"
+        #     print(f"Processed {identifier} with writing {files_written} patches")
+        # print(f"Total patches written: {total_patches}")
+
 
 def train_test_split():
     with open("fundus_patches.txt", "r") as f:
@@ -63,10 +110,15 @@ def train_test_split():
 
 if __name__ == "__main__":
     image_dir = "../data/Fundus_complete"
-    patch_dir = "/data/Fundus/patches"
+    patch_dir = "/data/Fundus/masked_patches"
     pdb.set_trace()
+    # if os.path.exists(patch_dir):
+    #     shutil.rmtree(patch_dir)
     os.makedirs(patch_dir, exist_ok=True)
-    patch_size = 128
+    patch_size = 256
+    create_fundus_files(image_dir, patch_dir, patch_size)
+    # os.makedirs(patch_dir)
+    # patch_size = 256
     # train_test_split()
     # create_fundus_files(image_dir, patch_dir, patch_size)
 
@@ -87,11 +139,11 @@ if __name__ == "__main__":
                 # original_image_path = os.path.join(output_dir, f"{image_name}_original.jpg")
                 # cv2.imwrite(original_image_path, cv2.imread(image_path))
 
-    image_path = "image3.jpg"
-    patch_size = 128
+    # image_path = "image3.jpg"
+    # patch_size = 128
 
-    patches = create_patches(image_path, patch_size)
-    os.makedirs("patches", exist_ok=True)
-    for i, patch in enumerate(patches):
-        patch_path = f"patches/patch_{i}.jpg"
-        cv2.imwrite(patch_path, patch)
+    # patches = create_patches(image_path, patch_size)
+    # os.makedirs("patches", exist_ok=True)
+    # for i, patch in enumerate(patches):
+    #     patch_path = f"patches/patch_{i}.jpg"
+    #     cv2.imwrite(patch_path, patch)
