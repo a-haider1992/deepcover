@@ -265,7 +265,7 @@ def to_explain(eobj):
       f = open(di+"/wsol-results.txt", "a")
       f.write('input_name   x_method    intersection_with_groundtruth\n')
       f.close()
-  class_name = "class_name"
+  class_name = None
 
   for i in range(0, len(eobj.inputs)):
     x=eobj.inputs[i]
@@ -274,11 +274,11 @@ def to_explain(eobj):
 
     print ('\n[Input {2}: {0} / Output Label (to Explain): {1}]'.format(eobj.fnames[i], y, i))
 
-    # if eobj.fnames[i].split("/")[2] is not None:
-    #     class_name = eobj.fnames[i].split("/")[2]
-    #     print ('  #### [Target Class: {0}]'.format(class_name))
-    # else:
-    #     print ('  ### Target class not found...')
+    if eobj.fnames[i].split("/")[2] is not None:
+        class_name = eobj.fnames[i].split("/")[2] + "_" + eobj.fnames[i].split("/")[-1]
+        print ('  #### [Target Class: {0}]'.format(class_name))
+    else:
+        print ('  ### Target class not found...')
 
     ite=0
     reasonable_advs=False
@@ -325,7 +325,7 @@ def to_explain(eobj):
     # di = di + '/{0}'.format(class_name)
     dii=di+'/{0}'.format(str(datetime.now()).replace(' ', '-'))
     dii=dii.replace(':', '-')
-    os.system('mkdir -p {0}'.format(dii+"_"+class_name))
+    os.system('mkdir -p {0}'.format(dii))
     for measure in eobj.measures:
       print ('  #### [Measuring: {0} is used]'.format(measure))
       ranking_i, spectrum=to_rank(selement, measure)
@@ -362,12 +362,13 @@ def to_explain_V2(eobj):
     print('  ### [Measures: {0}]'.format(eobj.measures))
     model = eobj.model
 
-    # Use both available GPUs if possible
-    if torch.cuda.device_count() > 1:
-        print("Using", torch.cuda.device_count(), "GPUs!")
-        model = nn.DataParallel(model)
-
-    model.cuda()
+    # Set GPU device
+    physical_devices = tf.config.list_physical_devices('GPU')
+    if len(physical_devices) > 0:
+        # tf.config.experimental.set_visible_devices(physical_devices[0], 'GPU')
+        print("Using GPU:", physical_devices[0])
+    else:
+        print("No GPU devices found. Running on CPU.")
 
     di = eobj.outputs
 
@@ -383,10 +384,9 @@ def to_explain_V2(eobj):
     class_name = "class_name"
 
     for i, x in enumerate(eobj.inputs):
-        x_tensor = torch.tensor(x, dtype=torch.float32).unsqueeze(0).cuda()
-        with torch.no_grad():
-            res = model(x_tensor)
-        y = torch.argsort(res.squeeze(), descending=True)[:eobj.top_classes].cpu().numpy()
+        orig_x = eobj.original_images[i]
+        res = model.predict(np.array([x]))
+        y = np.argsort(res)[0][-eobj.top_classes:]
 
         print('\n[Input {2}: {0} / Output Label (to Explain): {1}]'.format(eobj.fnames[i], y, i))
 
@@ -426,17 +426,18 @@ def to_explain_V2(eobj):
 
         if not reasonable_advs:
             continue
-
+        
+        ## original image is x
         selement = sbfl_elementt(x, 0, adv_xs, adv_ys, model, eobj.fnames[i])
         dii = os.path.join(di, str(datetime.now()).replace(' ', '-').replace(':', '-'))
-        os.makedirs(dii + "_" + class_name, exist_ok=True)
+        os.makedirs(dii, exist_ok=True)
         for measure in eobj.measures:
             print('  #### [Measuring: {0} is used]'.format(measure))
             ranking_i, spectrum = to_rank(selement, measure)
             selement.y = y
             diii = os.path.join(dii, measure)
             os.makedirs(diii, exist_ok=True)
-            np.savetxt(os.path.join(diii, 'ranking_{0}.txt'.format(class_name)), ranking_i, fmt='%s')
+            np.savetxt(os.path.join(diii, 'ranking_{0}.txt'.format(eobj.fnames[i])), ranking_i, fmt='%s')
 
             # Plot the heatmap
             spectrum = np.array((spectrum / spectrum.max()) * 255)
@@ -449,7 +450,7 @@ def to_explain_V2(eobj):
             fin = cv2.addWeighted(heatmap_img, 0.7, x3d, 0.3, 0)
             plt.rcParams["axes.grid"] = False
             plt.imshow(cv2.cvtColor(fin, cv2.COLOR_BGR2RGB))
-            plt.savefig(os.path.join(diii, 'heatmap_{0}_{1}.png'.format(measure, class_name if class_name else 'unknown')))
+            plt.savefig(os.path.join(diii, 'heatmap_{0}_{1}.png'.format(measure)))
 
             # Plot the top ranked pixels
             if not eobj.text_only:

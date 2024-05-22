@@ -96,6 +96,13 @@ def top_plot(sbfl_element, ind, di, metric='', eobj=None, bg=128, online=False, 
   except: pass
 
   save_an_image(origin_data, 'origin-{0}'.format(sbfl_element.y), di)
+  # Read an image from a given path
+  image_path = sbfl_element.fname
+  image = cv2.imread(image_path)
+
+  # Save the image using save_an_image method
+  if cv2.imwrite(di+'/'+'Real_image.jpg', image):
+    print("Real image saved successfully")
 
   ret=None
 
@@ -117,8 +124,10 @@ def top_plot(sbfl_element, ind, di, metric='', eobj=None, bg=128, online=False, 
         res=sbfl_element.model.predict(sbfl_preprocess(eobj, np.array([im_o])), verbose=10)
         y=np.argsort(res)[0][-eobj.top_classes:]
         #print (int(count/base), '>>>', y, sbfl_element.y, y==sbfl_element.y)
-        if y==sbfl_element.y and not found_exp: 
-          save_an_image(im_o, 'explanation-found-{1}-{0}'.format(int(count/base), metric), di)
+        if y==sbfl_element.y and not found_exp:
+          exp_img_name = sbfl_element.fname.split('/')[-2] + '-' + sbfl_element.fname.split('/')[-1]
+          save_an_image(im_o, 'explanation-found-{0}'.format(exp_img_name), di)
+          # save_an_image(im_o, 'explanation-found-{1}-{0}'.format(int(count/base), metric), di)
           found_exp = True
           if not eobj.boxes is None: # wsol calculation
               vect=eobj.boxes[sbfl_element.fname.split('/')[-1]]
