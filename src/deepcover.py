@@ -7,6 +7,8 @@ from keras.models import load_model
 import matplotlib.pyplot as plt
 import csv
 import cv2
+from dataset import CustomImageDataset
+from RPN import VAE
 
 import argparse
 import os
@@ -19,6 +21,10 @@ from comp_explain import *
 from RPN import *
 
 import logging
+from torch.utils.tensorboard import SummaryWriter
+from torch.utils.data import DataLoader
+from torchvision import transforms
+import torch.optim as optim
 import random as rng
 
 def main():
@@ -31,7 +37,7 @@ def main():
                     help="the input test data directory", metavar="DIR")
   parser.add_argument("--outputs", dest="outputs", default="outs",
                     help="the outputput test data directory", metavar="DIR")
-  parser.add_argument("--measures", dest="measures", default=['tarantula', 'zoltar', 'ochiai', 'wong-ii'],
+  parser.add_argument("--measures", dest="measures", default=['tarantula'],
                     help="the SFL measures (tarantula, zoltar, ochiai, wong-ii)", metavar="" , nargs='+')
   parser.add_argument("--measure", dest="measure", default="None",
                     help="the SFL measure", metavar="MEASURE")
@@ -106,6 +112,7 @@ def main():
   ## to load the input data
   fnames=[]
   xs=[]
+  orig_xs=[]
   if args.inputs!='-1':
     for path, subdirs, files in os.walk(args.inputs):
       for name in files:
@@ -116,6 +123,7 @@ def main():
               x=np.expand_dims(x,axis=2)
             else: 
               x=image.load_img(fname, target_size=(img_rows, img_cols))
+              orig_xs.append(image.load_img(fname))
             x=np.expand_dims(x,axis=0)
             xs.append(x)
             fnames.append(fname)
@@ -148,6 +156,7 @@ def main():
   eobj.occlusion_file=args.occlusion_file
   eobj.image_size=img_rows
   eobj.explainable_method = args.explainable_method
+  eobj.original_images = orig_xs
   measures = []
   if not args.measure=='None':
       measures.append(args.measure)
@@ -179,13 +188,13 @@ def main():
               for tarantula_file in tarantula_files:
                 if "heatmap" in tarantula_file:
                   class_name = tarantula_file.split("_")[-1].split(".")[0]
-                # if "explanation-found" in tarantula_file:
-                if tarantula_file == "tarantula-5.jpg":
+                if "explanation-found" in tarantula_file:
+                # if tarantula_file == "tarantula-5.jpg":
                   fname=(os.path.join(root, tarantula_path, tarantula_file))
                   obj = {"fname": fname, "class": class_name, "folder_name": subdir}
                   fnames.append(obj)
 
-    patch_size = (224, 224)
+    patch_size = (256, 256)
     num_clusters = 2
     # Convert the image to grayscale
 
@@ -361,11 +370,100 @@ def main():
   if args.causal:
     comp_explain(eobj)
   elif args.explainable_method == "GradCam" or args.explainable_method == "Lime":
-    logger.info("Using GradCam or Lime")
-    compute_gradcam_maps(eobj)
+    compute_confusion_matrix(eobj)
+    # logger.info("Using GradCam or Lime")
+    # compute_gradcam_maps(eobj)
   elif args.explainable_method == "DeepCover":
-    logger.info("Using DeepCover")
-    to_explain_V2(eobj)
+    to_explain(eobj)
+  #   # Initialize hyperparameters
+  #   # pdb.set_trace()
+  #   input_dim = (3, 128, 128)  # RGB images
+  #   latent_dim = 300
+  #   learning_rate = 1e-3
+  #   batch_size = 8
+  #   epochs = 100
+
+  #   # Initialize TensorBoard writer
+  #   writer = SummaryWriter()
+
+  #   # Load your custom dataset using ImageFolder
+  #   transform = transforms.Compose([
+  #   transforms.RandomHorizontalFlip(),
+  #   transforms.Resize([input_dim[1], input_dim[2]]),
+  #   # transforms.Grayscale(),
+  #   transforms.ToTensor(),
+  #   ])
+
+
+  #   # Define the loss function
+  #   def loss_function(recon_x, x, mu=None, logvar=None):
+  #     # BCE = nn.BCELoss(reduction='sum')
+  #     MSE = nn.MSELoss(reduction='sum')
+  #     reconstruction_loss = MSE(recon_x, x)
+  #     kl_divergence = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+  #     # logging.info(f'Recon loss: {reconstruction_loss}')
+  #     # logging.info(f'KL loss: {kl_divergence}')
+  #     return reconstruction_loss + kl_divergence
+
+  #   # pdb.set_trace()
+  #   dataset = CustomImageDataset(txt_file="fundus.txt",root_dir="data", transform=transform)
+  #   dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+  #   # Initialize the VAE model
+  #   vae = VAE(input_dim, latent_dim)
+
+  #   # Define the optimizer
+  #   # Define the learning rate decay scheduler
+  #   optimizer = optim.Adam(vae.parameters(), lr=learning_rate)
+  #   # optimizer = optim.SGD(vae.parameters(), lr=learning_rate, momentum=0.9)
+  #   # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+  #   # Move the model to GPU if available
+  #   # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+  #   # device = torch.device("cpu")
+  #   # print(f"Device: {device}")
+  #   # vae.to(device)
+
+  #   # # Use DataParallel to utilize multiple GPUs if available
+  #   # if torch.cuda.device_count() > 1:
+  #   #     vae = nn.DataParallel(vae)
+
+  #   # Training loop
+  #   vae.train()
+  #   for epoch in range(epochs):
+  #       total_loss = 0.0
+  #       for batch_idx, data in enumerate(dataloader):
+  #           # pdb.set_trace()
+  #           # data = data[0].to(device)  # Move data to GPU if available
+  #           data = data[0]
+  #           optimizer.zero_grad()
+  #           recon_batch, mu, var = vae(data)
+  #           if data.shape == recon_batch.shape:
+  #             loss = loss_function(recon_batch, data, mu, var)
+  #             loss.backward()
+  #             total_loss += loss.item()
+  #             optimizer.step()
+              
+  #             if batch_idx % 100 == 0:
+  #                 print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+  #                     epoch, batch_idx * len(data), len(dataloader.dataset),
+  #                     100. * batch_idx / len(dataloader), loss.item() / len(data)))
+  #           else:
+  #             print(f'Input batch shape: {data.shape}')
+  #             print(f'Reconstructed batch shape: {recon_batch.shape}')
+  #             raise Exception("Shape of input and reconstructed input does not match!!")
+  #           # writer.add_scalar('Loss/train_batch', loss.item() / len(data), epoch * len(dataloader) + batch_idx)
+  #       # scheduler.step()
+  #       print('====> Epoch: {} Average loss: {:.4f}'.format(epoch, total_loss / len(dataloader.dataset)))
+  #       logging.info(f'Total loss: {total_loss / len(dataloader.dataset)}')
+  #       # writer.add_scalar('Loss/train', total_loss / len(dataloader.dataset), epoch)
+
+  #   # Save the trained model
+  #   torch.save(vae.state_dict(), 'vae_model.pth')
+  #   # Close TensorBoard writer
+  #   writer.close()
+
+    # logger.info("Using DeepCover")
+    # to_explain_V2(eobj)
 
 
 

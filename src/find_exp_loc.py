@@ -105,5 +105,17 @@ def extract_explanations(big_image_path, small_image_path, patches_dir='patches'
     print(f'Paths of generated patches and the original big image written to {csv_file_path}')
 
 if __name__ == '__main__':
-    # Example usage
-    extract_explanations('image3.jpg', 'explanation-found-image3.jpg')
+    folder = 'patches'
+    for path, subdirs, files in os.walk(folder):
+        explanation = None
+        original = None
+        for name in files:
+            fname=(os.path.join(path, name))
+            if fname.endswith('.jpg') or fname.endswith('.png') or fname.endswith('.JPEG'):
+                # Example usage
+                if "explanation-found" in fname:
+                    explanation = fname
+                elif "Real_image" in fname:
+                    original = fname
+        if explanation and original:
+            extract_explanations(original, explanation)
