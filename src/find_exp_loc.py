@@ -179,10 +179,8 @@ def extract_explanations_box(big_image_path, small_image_path, patches_dir='patc
 
             # Save the patch
             patch_image_path = os.path.join(patches_dir, f'extracted_patch_{idx}.jpg')
-            cv2.imwrite(patch_image_path, patch)
-
-            # Write the paths to the CSV file
-            file.write(f'{patch_image_path},{big_image_path}\n')
+            if cv2.imwrite(patch_image_path, patch):
+                file.write(f'{patch_image_path},{big_image_path}\n')
 
     print(f'Paths of generated patches and the original big image written to {csv_file_path}')
 
@@ -190,7 +188,7 @@ def extract_explanations_box(big_image_path, small_image_path, patches_dir='patc
 if __name__ == '__main__':
     folder = 'patches'
     # extract_explanations('image5.jpg', 'explanation-found-image5.jpg')
-    extract_explanations_box('image2.jpg', 'explanation-found-image2.jpg')
+    extract_explanations_box('image5.jpg', 'explanation-found-image5.jpg')
     # for path, subdirs, files in os.walk(folder):
     #     explanation = None
     #     original = None
