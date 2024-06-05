@@ -362,10 +362,12 @@ def to_explain(eobj):
 
 def compute_confusion_matrix(eobj):
     model = eobj.model
-    pdb.set_trace()
+    import shutil
+    # pdb.set_trace()
     # Initialize lists to store the true and predicted labels
     true_labels = []
     predicted_labels = []
+    count_dict = {'correct': [], 'incorrect': []}
 
     for i, x in enumerate(eobj.inputs):
         res = model.predict(np.array([x]))
@@ -377,9 +379,26 @@ def compute_confusion_matrix(eobj):
         # print('\n[Input {2}: {0} / Predicted Label: {1}]'.format(eobj.fnames[i], pred, i))
         # print('  #### [Real Class: {0}]'.format(real_class))
 
+        if pred == real_class:
+            count_dict['correct'].append(eobj.fnames[i])
+            if not os.path.exists(str(real_class)):
+              os.mkdir(str(real_class))
+            shutil.copy(eobj.fnames[i], str(real_class))
+        else:
+            count_dict['incorrect'].append(eobj.fnames[i])
+
         # Append the labels to the lists
         true_labels.append(real_class)
         predicted_labels.append(pred)
+
+    # with open('correct_predictions.txt', 'w') as f:
+    #     for item in count_dict['correct']:
+    #         f.write("%s\n" % item)
+    
+    # with open('incorrect_predictions.txt', 'w') as f:
+    #     for item in count_dict['incorrect']:
+    #         f.write("%s\n" % item)
+
 
     # Compute the confusion matrix
     cm = confusion_matrix(true_labels, predicted_labels)
@@ -387,6 +406,9 @@ def compute_confusion_matrix(eobj):
     # Print the confusion matrix
     print('\nConfusion Matrix:')
     print(cm)
+
+    print(f'Count of correct predictions: {len(count_dict["correct"])}')
+    print(f'Count of incorrect predictions: {len(count_dict["incorrect"])}')
 
     # Plot the confusion matrix for better visualization
     plt.figure(figsize=(10, 7))

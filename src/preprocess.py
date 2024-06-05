@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import pandas as pd
 import os
 import pdb
 import shutil
@@ -10,7 +11,7 @@ def create_patches(image_path, patch_size):
     height, width, _ = image.shape
 
     patches = []
-    stride = patch_size // 8
+    stride = patch_size // 2
     for y in range(0, height - patch_size + 1, stride):
         for x in range(0, width - patch_size + 1, stride):
             patch = image[y:y+patch_size, x:x+patch_size]
@@ -119,16 +120,39 @@ def train_test_split():
         for line in test_lines:
             f.write(line)
 
+def normalize_id(id):
+    return id.replace('I', '1')
 
 if __name__ == "__main__":
-    # image_dir = "../data/Fundus_complete"
-    # patch_dir = "/data/Fundus/masked_patches"
+    image_dir = "../data/Fundus_complete"
+    # with open("annotations.txt", "w") as file:
+    #     df = pd.read_csv("SNP_calls_combined_2020-06-16.csv", index_col=False, sep=',')
+    #     # Filter the DataFrame for rows where gene value is "rs3750846"
+    #     filtered_df = df[df['SNP'] == 'rs3750846']
+    #     pdb.set_trace()
+    #     nicola_ids = np.array(filtered_df.iloc[:, 0])
+    #     labels = np.array(np.ceil(filtered_df.iloc[:, -1]))
+    #     genes = np.array(filtered_df.iloc[:, 1])
+    #     pdb.set_trace()
+
+    #     for root, dirs, files in os.walk(image_dir):
+    #         for filename in files:
+    #             if filename.endswith(".jpg") or filename.endswith(".png"):
+    #                 nicola_id = filename.split("_")[0]
+    #                 normalized_nicola_id = normalize_id(nicola_id)
+    #                 for id in nicola_ids:
+    #                     normalized_id = normalize_id(id)
+    #                     # pdb.set_trace()
+    #                     if normalized_id == normalized_nicola_id:
+    #                         print(f"Found {filename} with id {id} and gene {genes[nicola_ids == id][0]}")
+    #                         file.write(os.path.join(root, filename) + "," + str(labels[nicola_ids == id][0]) + "\n")
+    patch_dir = "/data/Fundus/patches"
     # pdb.set_trace()
-    # # if os.path.exists(patch_dir):
-    # #     shutil.rmtree(patch_dir)
-    # os.makedirs(patch_dir, exist_ok=True)
-    # patch_size = 256
-    # create_fundus_files(image_dir, patch_dir, patch_size)
+    # if os.path.exists(patch_dir):
+    #     shutil.rmtree(patch_dir)
+    os.makedirs(patch_dir, exist_ok=True)
+    patch_size = 256
+    create_fundus_files(image_dir, patch_dir, patch_size)
     # os.makedirs(patch_dir)
     # patch_size = 256
     # train_test_split()
@@ -151,11 +175,11 @@ if __name__ == "__main__":
                 # original_image_path = os.path.join(output_dir, f"{image_name}_original.jpg")
                 # cv2.imwrite(original_image_path, cv2.imread(image_path))
 
-    image_path = "image7.jpg"
-    patch_size = 256
+    # image_path = "image7.jpg"
+    # patch_size = 256
 
-    patches = create_masked_patches(image_path, patch_size)
-    os.makedirs("patches", exist_ok=True)
-    for i, patch in enumerate(patches):
-        patch_path = f"patches/patch_{i}.jpg"
-        cv2.imwrite(patch_path, patch)
+    # patches = create_masked_patches(image_path, patch_size)
+    # os.makedirs("patches", exist_ok=True)
+    # for i, patch in enumerate(patches):
+    #     patch_path = f"patches/patch_{i}.jpg"
+    #     cv2.imwrite(patch_path, patch)

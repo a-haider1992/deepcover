@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import os
+import pdb
 
 def extract_explanations(big_image_path, small_image_path, patches_dir='patches', min_patch_size=256, csv_file_path='patches_paths.txt'):
     # Read the big and small images
@@ -105,7 +106,7 @@ def extract_explanations(big_image_path, small_image_path, patches_dir='patches'
     print(f'Paths of generated patches and the original big image written to {csv_file_path}')
 
 
-def extract_explanations_box(big_image_path, small_image_path, patches_dir='patches', patch_size=256, csv_file_path='patches_paths.txt'):
+def extract_explanations_box(big_image_path, small_image_path, patches_dir='patches', patch_size=256, csv_file_path='fundus_explanations.txt'):
     # Read the big and small images
     big_image = cv2.imread(big_image_path)
     small_image = cv2.imread(small_image_path)
@@ -143,7 +144,7 @@ def extract_explanations_box(big_image_path, small_image_path, patches_dir='patc
     os.makedirs(patches_dir, exist_ok=True)
 
     # Prepare to write the paths of patches and the original big image to a text file
-    with open(csv_file_path, 'w') as file:
+    with open(csv_file_path, 'a+') as file:
         # Iterate over the hull list to extract patches and write paths
         for idx, hull in enumerate(hull_list):
             # Scale the hull points
@@ -180,30 +181,33 @@ def extract_explanations_box(big_image_path, small_image_path, patches_dir='patc
             # Save the patch
             patch_image_path = os.path.join(patches_dir, f'extracted_patch_{idx}.jpg')
             if cv2.imwrite(patch_image_path, patch):
-                file.write(f'{patch_image_path},{big_image_path}\n')
+                # file.write(f'{patch_image_path},{big_image_path}\n')
+                file.write(f'{patch_image_path}\n')
 
     print(f'Paths of generated patches and the original big image written to {csv_file_path}')
 
 
 if __name__ == '__main__':
-    folder = 'patches'
+    THIS_FOLDER = os.path.dirname(os.path.dirname(__file__))
+    folder = 'outs-correct'
+    folder = os.path.join(THIS_FOLDER, folder)
     # extract_explanations('image5.jpg', 'explanation-found-image5.jpg')
-    extract_explanations_box('image5.jpg', 'explanation-found-image5.jpg')
-    # for path, subdirs, files in os.walk(folder):
-    #     explanation = None
-    #     original = None
-    #     class_name = None
-    #     example_name = None
-    #     for name in files:
-    #         fname=(os.path.join(path, name))
-    #         if fname.endswith('.jpg') or fname.endswith('.png') or fname.endswith('.JPEG'):
-    #             # Example usage
-    #             if "explanation-found" in fname:
-    #                 class_name = fname.split('-')[1]
-    #                 example_name = fname.split('-')[2].split('.')[0]
-    #                 explanation = fname
-    #             elif "Real_image" in fname:
-    #                 original = fname
-    #     if explanation and original and class_name and example_name:
-    #         patch_dir = f'patches/{class_name}/{example_name}'
-    #         extract_explanations(original, explanation, patch_dir, 256, 'patches_paths.txt')
+    # extract_explanations_box('image5.jpg', 'explanation-found-image5.jpg')
+    for path, subdirs, files in os.walk(folder):
+        explanation = None
+        original = None
+        class_name = None
+        example_name = None
+        for name in files:
+            fname=(os.path.join(path, name))
+            if fname.endswith('.jpg') or fname.endswith('.png') or fname.endswith('.JPEG'):
+                # Example usage
+                if "explanation-found" in fname:
+                    class_name = fname.split('/')[-1].split('-')[2]
+                    example_name = fname.split('/')[-1].split('-')[-1].split('.')[0]
+                    explanation = fname
+                elif "Real_image" in fname:
+                    original = fname
+        if explanation and original and class_name and example_name:
+            patch_dir = f'patches/{class_name}/{example_name}'
+            extract_explanations_box(original, explanation, patch_dir, 256)
