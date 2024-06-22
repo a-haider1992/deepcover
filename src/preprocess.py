@@ -11,7 +11,7 @@ def create_patches(image_path, patch_size):
     height, width, _ = image.shape
 
     patches = []
-    stride = patch_size // 2
+    stride = patch_size // 4
     for y in range(0, height - patch_size + 1, stride):
         for x in range(0, width - patch_size + 1, stride):
             patch = image[y:y+patch_size, x:x+patch_size]
@@ -34,7 +34,7 @@ def create_masked_patches(image_path, patch_size):
     height, width, _ = image.shape
 
     patches = []
-    stride = patch_size // 2
+    stride = patch_size // 4
     for y in range(0, height - patch_size + 1, stride):
         for x in range(0, width - patch_size + 1, stride):
             patch = image[y:y+patch_size, x:x+patch_size]
@@ -100,11 +100,11 @@ def create_fundus_files(image_dir, patch_dir, patch_size):
                     #         patch_written += 1
         #         assert patch_count_per_image == patch_written, "Number of patches written does not match number of patches per image"
         #     print(f"Processed {identifier} with writing {files_written} patches")
-        # print(f"Total patches written: {total_patches}")
+        print(f"Total patches written: {total_patches}")
 
 
 def train_test_split():
-    with open("fundus_patches.txt", "r") as f:
+    with open("annotations.txt", "r") as f:
         pdb.set_trace()
         lines = f.readlines()
         np.random.shuffle(lines)
@@ -112,11 +112,11 @@ def train_test_split():
         train_lines = lines[:split]
         test_lines = lines[split:]
 
-    with open("fundus_train.txt", "w") as f:
+    with open("fundus_annotate_train.txt", "w") as f:
         for line in train_lines:
             f.write(line)
 
-    with open("fundus_test.txt", "w") as f:
+    with open("fundus_annotate_test.txt", "w") as f:
         for line in test_lines:
             f.write(line)
 
@@ -124,8 +124,65 @@ def normalize_id(id):
     return id.replace('I', '1')
 
 if __name__ == "__main__":
-    image_dir = "../data/Fundus_complete"
-    # with open("annotations.txt", "w") as file:
+    # image_dir = "../data/Fundus_complete"
+    # image_dir = "/data/B-scans"
+    oct_file = pd.read_csv("annotations-oct-sorted.txt", index_col=False, header=None, sep=',')
+
+    # Define a function to extract the sorting keys
+    # def extract_sorting_keys(path):
+    #     try:
+    #         parts = path.split('/')[3].split("_")
+    #         if len(parts) >= 5:
+    #             # Extract the second part, remove 'N' and convert to integer
+    #             second_value = int(parts[1][1:])
+    #             third_value = int(parts[4].split(".")[0])
+    #             return second_value, third_value
+    #     except (IndexError, ValueError) as e:
+    #         print(f"Error processing path {path}: {e}")
+    #     return float('inf'), float('inf')  # Handle cases where the path does not split correctly or conversion fails
+
+    # # Apply the function to the first column and create new columns for sorting
+    # oct_file[['sort_key_1', 'sort_key_2']] = oct_file.iloc[:, 0].apply(lambda x: pd.Series(extract_sorting_keys(x)))
+
+    # # Print to check if keys are extracted correctly
+    # print("Before sorting:")
+    # print(oct_file[['sort_key_1', 'sort_key_2']].head(10))
+
+    # # Sort the DataFrame based on the new columns
+    # oct_file_sorted = oct_file.sort_values(by=['sort_key_1', 'sort_key_2'])
+
+    # # Drop the sorting key columns if you don't need them anymore
+    # oct_file_sorted = oct_file_sorted.drop(columns=['sort_key_1', 'sort_key_2'])
+
+    # # Print to check if sorting worked
+    # print("After sorting:")
+    # print(oct_file_sorted.head(10))
+
+    # # write the sorted DataFrame to a new file
+    # oct_file_sorted.to_csv("annotations-oct-sorted.txt", header=False, index=False)
+
+    # pdb.set_trace()
+
+    # Read each line of the file
+    for index, row in oct_file.iterrows():
+        # Extract the image path and label from the row
+        image_path, label = row[0], row[1]
+        if label == 0.0:
+            if not os.path.exists("data/0"):
+                os.makedirs("data/0")
+            shutil.move(image_path, "data/0")
+        elif label == 1.0:
+            if not os.path.exists("data/1"):
+                os.makedirs("data/1")
+            shutil.move(image_path, "data/1")
+        elif label == 2.0:
+            if not os.path.exists("data/2"):
+                os.makedirs("data/2")
+            shutil.move(image_path, "data/2")
+        else:
+            print(f"Invalid label {label} for image {image_path}")
+    
+    # with open("annotations-oct.txt", "w") as file:
     #     df = pd.read_csv("SNP_calls_combined_2020-06-16.csv", index_col=False, sep=',')
     #     # Filter the DataFrame for rows where gene value is "rs3750846"
     #     filtered_df = df[df['SNP'] == 'rs3750846']
@@ -138,7 +195,7 @@ if __name__ == "__main__":
     #     for root, dirs, files in os.walk(image_dir):
     #         for filename in files:
     #             if filename.endswith(".jpg") or filename.endswith(".png"):
-    #                 nicola_id = filename.split("_")[0]
+    #                 nicola_id = filename.split("_")[1]
     #                 normalized_nicola_id = normalize_id(nicola_id)
     #                 for id in nicola_ids:
     #                     normalized_id = normalize_id(id)
@@ -146,13 +203,13 @@ if __name__ == "__main__":
     #                     if normalized_id == normalized_nicola_id:
     #                         print(f"Found {filename} with id {id} and gene {genes[nicola_ids == id][0]}")
     #                         file.write(os.path.join(root, filename) + "," + str(labels[nicola_ids == id][0]) + "\n")
-    patch_dir = "/data/Fundus/patches"
+    # patch_dir = "/data/Fundus/patches"
     # pdb.set_trace()
     # if os.path.exists(patch_dir):
     #     shutil.rmtree(patch_dir)
-    os.makedirs(patch_dir, exist_ok=True)
-    patch_size = 256
-    create_fundus_files(image_dir, patch_dir, patch_size)
+    # os.makedirs(patch_dir, exist_ok=True)
+    # patch_size = 256
+    # create_fundus_files(image_dir, patch_dir, patch_size)
     # os.makedirs(patch_dir)
     # patch_size = 256
     # train_test_split()
