@@ -179,43 +179,20 @@ for epoch in range(num_epochs):
 
 print(f"Best F1-Score: {best_f1}")
 
-
-
-# model.train()
-# for epoch in range(num_epochs):
-#     total_loss = 0.0
-#     for batch, (images, labels) in enumerate(dataloader):
-#         images, labels = images.to(device), labels.to(device)
-        
-#         optimizer.zero_grad()
-        
-#         outputs = model(images)
-#         # pdb.set_trace()
-#         loss = criterion(outputs, labels)
-#         total_loss += loss.item()
-#         loss.backward()
-#         # nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
-#         optimizer.step()
-#         if batch % 100 == 0:
-#             print(f"Epoch {epoch + 1}/{num_epochs}, Batch {batch}, Loss: {total_loss / (batch + 1)}")
-#     epoch_loss = total_loss / len(dataloader)
-#     print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {epoch_loss}")
-
-# # Save the model if desired
-# torch.save(model.state_dict(), "fundus_classifier.pth")
-
 # # Evaluate the model
-# model.load_state_dict(torch.load("fundus_classifier.pth"))
+# model.load_state_dict(torch.load("best_fundus_classifier.pth"))
 # correct = 0
 # total = 0
 # accuracy = 0.0
 # model.eval()
 # true_labels = []
 # predicted_labels = []
+# # pdb.set_trace()
 # with torch.no_grad():
 #     for inputs, labels in test_loader:
 #         images, labels = inputs.to(device), labels
 #         outputs = model(images)
+#         # pdb.set_trace()
 #         _, predicted = torch.max(outputs.data, 1)
 #         total += len(labels)
 #         correct = 0
@@ -233,3 +210,5 @@ print(f"Best F1-Score: {best_f1}")
 #     # write the classification report to a file
 #     with open('classification_report.txt', 'w') as f:
 #         f.write(classification_report(true_labels, predicted_labels))
+#     with open('confusion_matrix.txt', 'w') as f:
+#         f.write(str(confusion_matrix(true_labels, predicted_labels)))
