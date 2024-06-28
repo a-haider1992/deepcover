@@ -5,6 +5,7 @@ import torchvision.transforms as transforms
 from PIL import Image
 import numpy as np
 import cv2
+from piqa import SSIM
 
 import torch.nn as nn
 import torch.optim as optim
@@ -19,7 +20,7 @@ class Autoencoder(nn.Module):
         self.encoder.head.fc = nn.Sequential(
             nn.Linear(1024, 512),
             nn.ReLU(),
-            nn.Linear(512, 350)  # 2 * latent_dim outputs for mean and variance
+            nn.Linear(512, 350)  # Adjust this as needed for your latent dimension
         )
         self.decoder = nn.Sequential(
             nn.Linear(350, 512),
@@ -29,12 +30,18 @@ class Autoencoder(nn.Module):
             nn.Linear(1024, 2048),
             nn.ReLU(),
             nn.Linear(2048, 3 * 224 * 224),  # Output size matches input size (3, 224, 224)
-            nn.Sigmoid()
         )
 
     def forward(self, x):
+        # Forward pass through encoder
         encoded = self.encoder(x)
+        
+        # Forward pass through decoder
         decoded = self.decoder(encoded)
+        
+        # Reshape the decoded output to (batch_size, 3, 224, 224)
+        decoded = decoded.view(-1, 3, 224, 224)
+        
         return decoded
 
 class CLAHETransform:
@@ -65,6 +72,11 @@ class CLAHETransform:
         # Convert numpy array back to PIL image
         img = Image.fromarray(img)
         return img
+    
+class SSIMLoss(SSIM):
+    def forward(self, x, y):
+        return 1. - super().forward(x, y)
+
 
 logging.basicConfig(filename='vae.log', level=logging.INFO)
 logging.info('Started training the OCT_FUNDUS Foundation model')
@@ -112,12 +124,14 @@ oct_dataloader = DataLoader(oct_dataset, batch_size=32)
 
 # Define the compute_loss function
 def compute_loss(fundus_encoded, fundus_images, oct_encoded, oct_images, mse_loss):
-    fundus_images = fundus_images.view(-1, 3*224*224)
-    oct_images = oct_images.view(-1, 3*224*224)
-    fundus_encoded = fundus_encoded.view(-1, 3*224*224)
-    oct_encoded = oct_encoded.view(-1, 3*224*224)
+    # fundus_images = fundus_images.view(-1, 3*224*224)
+    # oct_images = oct_images.view(-1, 3*224*224)
+    # fundus_encoded = fundus_encoded.view(-1, 3*224*224)
+    # oct_encoded = oct_encoded.view(-1, 3*224*224)
 
     mse_loss_value = mse_loss(fundus_encoded, fundus_images) + mse_loss(oct_encoded, oct_images)
+    # ssim = SSIMLoss().to(device)
+    # ssim_loss = ssim(fundus_encoded, fundus_images) + ssim(oct_encoded, oct_images)
     return mse_loss_value
 
 # Training loop
@@ -143,6 +157,7 @@ for epoch in range(num_epochs):
         optimizer.step()
 
     print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {total_loss.item()}")
+    torch.save(autoencoder.state_dict(), "autoencoder_oct_fundus.pth")
 
 # Save the trained autoencoder model
 torch.save(autoencoder.state_dict(), "autoencoder_oct_fundus.pth")
