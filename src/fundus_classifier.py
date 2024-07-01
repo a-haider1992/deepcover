@@ -9,9 +9,10 @@ from torchvision import datasets
 import torchvision.transforms as transforms
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
-from dataset import CustomImageDataset, ExplanationsPatchesDataset
+from dataset import CustomImageDataset, ExplanationsPatchesDataset, create_balanced_dataset
 import torchvision.models as models
 from sklearn.metrics import confusion_matrix , accuracy_score, classification_report, f1_score
+import logging
 import pdb
 
 # Define the ResNet-50 model
@@ -80,9 +81,40 @@ class CLAHETransform:
         return img
 
 
+class FocalLoss(nn.Module):
+    def __init__(self, gamma=2.0, alpha=None, reduction='mean'):
+        super(FocalLoss, self).__init__()
+        self.gamma = gamma
+        self.alpha = alpha
+        self.reduction = reduction
+
+    def forward(self, inputs, targets):
+        BCE_loss = nn.CrossEntropyLoss(reduction='none')(inputs, targets)
+        pt = torch.exp(-BCE_loss)  # Prevents nans when probability 0
+        F_loss = (1 - pt) ** self.gamma * BCE_loss
+
+        if self.alpha is not None:
+            alpha_t = self.alpha[targets]
+            F_loss = alpha_t * F_loss
+
+        if self.reduction == 'mean':
+            return F_loss.mean()
+        elif self.reduction == 'sum':
+            return F_loss.sum()
+        else:
+            return F_loss
+
+
+# Initialize logging
+logging.basicConfig(filename='fundus_classifier.log', level=logging.INFO)
+logging.info("Starting Fundus Classifier")
+
 # Initialize the model
 num_classes = 3
-num_epochs = 200
+num_epochs = 120
+
+logging.info(f"Number of classes: {num_classes}")
+logging.info(f"Number of epochs: {num_epochs}")
 
 # ResNet
 model = ResNetClassifier(num_classes)
@@ -98,6 +130,9 @@ model = ResNetClassifier(num_classes)
 image_size = 256  # Resize to 256x256
 crop_size = 224  # Center crop to 224x224
 
+logging.info(f"Image size: {image_size}")
+logging.info(f"Crop size: {crop_size}")
+
 transform = transforms.Compose([
     transforms.RandomHorizontalFlip(),
     transforms.RandomVerticalFlip(),
@@ -111,24 +146,53 @@ transform = transforms.Compose([
 
 # Create a custom dataset and dataloader
 dataset = CustomImageDataset(txt_file="fundus_annotate_train.txt", root_dir=".", transform=transform)
+
+# Initialize counters for each class
+class_counts = {0: 0, 1: 0, 2: 0}
+
+# Iterate through the dataset and count examples for each class
+for _, label in dataset:
+    class_counts[label] += 1
+
+# Print the counts for each class
+print(f"Class 0: {class_counts[0]} examples")
+print(f"Class 1: {class_counts[1]} examples")
+print(f"Class 2: {class_counts[2]} examples")
+logging.info(f"Class 0: {class_counts[0]} examples")
+logging.info(f"Class 1: {class_counts[1]} examples")
+logging.info(f"Class 2: {class_counts[2]} examples")
+
+# pdb.set_trace()
+
+# num_samples_per_class = max([sum(1 for _, label in dataset if label == i) for i in range(3)])
+# logging.info(f"Number of samples per class: {num_samples_per_class}")
+# # Create balanced dataset
+# balanced_dataset = create_balanced_dataset(dataset, transform, num_samples_per_class)
+
+# Create DataLoader
 dataloader = DataLoader(dataset, batch_size=128, shuffle=True)
+
+# dataloader = DataLoader(dataset, batch_size=128, shuffle=True)
 # test_dataset = datasets.ImageFolder(root='../data/Fundus', transform=transform)
 test_dataset = CustomImageDataset(txt_file="fundus_annotate_test.txt", root_dir=".", transform=transform)
 test_loader = DataLoader(test_dataset, batch_size=128, shuffle=True)
 
-# Fine-tune the model
-criterion = nn.CrossEntropyLoss()
-# criterion = nn.NLLLoss()
-# optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
-optimizer = torch.optim.SGD(model.parameters(), lr=1e-2, momentum=0.9)
-# scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
-
+# Define the device
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 model.to(device)
 
 if torch.cuda.device_count() > 1:
     model = nn.DataParallel(model)
 
+# Fine-tune the model
+alpha = torch.tensor([1.0, 2.0, 3.0]).to(device)
+criterion = FocalLoss(gamma=2.0, alpha=alpha)
+logging.info(f"Criterion: {criterion}")
+# criterion = nn.CrossEntropyLoss()
+# criterion = nn.NLLLoss()
+# optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
+optimizer = torch.optim.SGD(model.parameters(), lr=1e-2, momentum=0.9)
+# scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
 
 best_f1 = 0.0
 early_stopping_patience = 10
@@ -178,6 +242,10 @@ for epoch in range(num_epochs):
         break
 
 print(f"Best F1-Score: {best_f1}")
+logging.info(f"Best F1-Score: {best_f1}")
+logging.info(f"Confusion Matrix: {confusion_matrix(all_labels, all_preds)}")
+logging.info(f"Classification Report: {classification_report(all_labels, all_preds)}")
+
 
 # # Evaluate the model
 # model.load_state_dict(torch.load("best_fundus_classifier.pth"))
