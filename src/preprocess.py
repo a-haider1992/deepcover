@@ -4,8 +4,9 @@ import pandas as pd
 import os
 import pdb
 import shutil
+import matplotlib.pyplot as plt
 
-def extract_patches_from_heatmap(heatmap_path, original_image_path, output_dir, patch_size=256, max_patches=1000):
+def extract_patches_from_heatmap(heatmap_path, original_image_path, output_dir, patch_size=256, max_patches=100, file_obj=None):
     """
     Extract patches from the original image at the locations of hot spots in the heatmap.
     
@@ -53,7 +54,8 @@ def extract_patches_from_heatmap(heatmap_path, original_image_path, output_dir, 
     ]
 
     # Extract patches and save them, limiting to max_patches
-    os.makedirs(output_dir, exist_ok=True)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
 
     patch_count = 0
     for i, coord in enumerate(valid_coords):
@@ -63,11 +65,12 @@ def extract_patches_from_heatmap(heatmap_path, original_image_path, output_dir, 
         patch_filename = os.path.join(output_dir, f'patch_{patch_count}.png')
         if patch is not None:
             cv2.imwrite(patch_filename, patch)
+            file_obj.write(f"{patch_filename}\n")
             patch_count += 1
             print(f"Saved patch to {patch_filename}")
 
 
-def extract_patches_from_lime_map(lime_map_path, original_image_path, output_dir, patch_size=256, max_patches=1000):
+def extract_patches_from_lime_map(lime_map_path, original_image_path, output_dir, patch_size=256, max_patches=100, file_obj=None):
     """
     Extract patches from the original image at the locations of green dots in the LIME map.
     
@@ -134,6 +137,7 @@ def extract_patches_from_lime_map(lime_map_path, original_image_path, output_dir
         patch_filename = os.path.join(output_dir, f'patch_{i}.png')
         if patch is not None:
             cv2.imwrite(patch_filename, patch)
+            file_obj.write(f"{patch_filename}\n")
             patch_count += 1
             print(f"Saved patch to {patch_filename}")
 
@@ -261,48 +265,145 @@ def train_val_test_split():
         for line in test_lines:
             f.write(line)
 
+def train_test_split():
+    with open("annotations-fundus-rs10922109.txt", "r") as f:
+        pdb.set_trace()
+        lines = f.readlines()
+        # np.random.shuffle(lines)
+        
+        train_split = int(0.8 * len(lines))
+
+        train_lines = lines[:train_split]
+        test_lines = lines[train_split:]
+
+    with open("fundus-rs10922109_train.txt", "w") as f:
+        for line in train_lines:
+            f.write(line)
+
+    with open("fundus-rs10922109_test.txt", "w") as f:
+        for line in test_lines:
+            f.write(line)
+
+
+def normalize_and_save_images(main_folder, output_main_folder, weights=[0.5, 0.5, 1.5]):
+    def load_images(image_dir):
+        images = []
+        file_paths = []
+        for root, dirs, files in os.walk(image_dir):
+            for filename in files:
+                if filename.endswith(".jpg") or filename.endswith(".png"):
+                    img_path = os.path.join(root, filename)
+                    img = cv2.imread(img_path)  # Load in color
+                    if img is not None:
+                        images.append(img)
+                        file_paths.append(img_path)
+        return images, file_paths
+
+    def calculate_mean_std(images):
+        brightness_values = []
+        for img in images:
+            hsv_img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+            brightness_values.append(hsv_img[:, :, 2].flatten())  # V channel for brightness
+        brightness_values = np.concatenate(brightness_values)
+        mean = np.mean(brightness_values)
+        std = np.std(brightness_values)
+        return mean, std
+
+    def normalize_image(image, mean_src, std_src, mean_target, std_target):
+        hsv_img = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        v_channel = hsv_img[:, :, 2]
+        normalized_v = (v_channel - mean_src) / std_src * std_target + mean_target
+        normalized_v = np.clip(normalized_v, 0, 255)  # Ensure pixel values are valid
+        hsv_img[:, :, 2] = normalized_v.astype(np.uint8)
+        normalized_img = cv2.cvtColor(hsv_img, cv2.COLOR_HSV2BGR)
+        return normalized_img
+
+    subfolders = [f.path for f in os.scandir(main_folder) if f.is_dir()]
+    output_subfolders = [os.path.join(output_main_folder, os.path.basename(subfolder)) for subfolder in subfolders]
+
+    # Calculate the global mean and standard deviation
+    all_images = []
+    for subfolder in subfolders:
+        images, _ = load_images(subfolder)
+        all_images.extend(images)
+    global_mean, global_std = calculate_mean_std(all_images)
+
+    for subfolder, output_subfolder, weight in zip(subfolders, output_subfolders, weights):
+        images, paths = load_images(subfolder)
+        
+        mean, std = calculate_mean_std(images)
+        
+        # Adjust the target mean and std with weights
+        adjusted_mean_target = global_mean * (1 - weight) + mean * weight
+        adjusted_std_target = global_std * (1 - weight) + std * weight
+        
+        os.makedirs(output_subfolder, exist_ok=True)
+        
+        for idx, img in enumerate(images):
+            normalized_img = normalize_image(img, mean, std, adjusted_mean_target, adjusted_std_target)
+            output_path = os.path.join(output_subfolder, os.path.basename(paths[idx]))
+            cv2.imwrite(output_path, normalized_img)
+
+
 def normalize_id(id):
     return id.replace('I', '1')
 
 if __name__ == "__main__":
-    # image_dir = "../data/Fundus_complete"
+    image_dir = "../data/Fundus"
     # image_dir = "/data/B-scans"
-    oct_file = pd.read_csv("fundus_annotate_test.txt", index_col=False, header=None, sep=',')
-    image_dir = "../outs-cam"
+    # oct_file = pd.read_csv("fundus_annotate_train.txt", index_col=False, header=None, sep=',')
+    # image_dir = "../outs-cam"
 
-    output_dir = 'gradcam_extracted_patches'
-    # lime_map_path = '../outs-cam/0/Lime_0_TE-Z_1_20140131114839533_R.jpg'
-    # original_image_path = '../data/Fundus_correct/0/TE-Z_1_20140131114839533_R.jpg'
-    # extract_patches_from_lime_map(lime_map_path, original_image_path, output_dir)
+    output_dir = '../data/Fundus_normalized'
+    normalize_and_save_images(image_dir, output_dir)
 
-    for root, dirs, files in os.walk(image_dir):
-        for dir in dirs:
-            print(f"Processing directory {dir}")
-            # pdb.set_trace()
-            files = os.listdir(os.path.join(root, dir))
-            for filename in files:
-                # print(f"Processing {filename}")
-                if filename.startswith("Superimposed"):
-                    print(f"Processing {filename}")
-                    # Example usage
-                    original_image_name = "TE-"+filename.split("-")[1]
-                    lime_map_path = os.path.join(root, dir, filename)
-                    original_image_path = os.path.join('../data/Fundus_correct', dir, original_image_name)
-                    # pdb.set_trace()
-                    # lime_map_path = '../outs-cam/0/Lime_0_TE-Z_1_20140131114839533_R.jpg'
-                    # original_image_path = '../data/Fundus_correct/0/TE-Z_1_20140131114839533_R.jpg'
-                    output_dir = 'gradcam_extracted_patches'
-                    original_image_name_no_ext = original_image_name.split(".")[0]
-                    if dir == '0':
-                        output_dir = f'{output_dir}/0/{original_image_name_no_ext}'
-                    elif dir == '1':
-                        output_dir = f'{output_dir}/1/{original_image_name_no_ext}'
-                    elif dir == '2':
-                        output_dir = f'{output_dir}/2/{original_image_name_no_ext}'
-                    else:
-                        raise ValueError(f"Invalid directory {dir}")
-                    extract_patches_from_lime_map(lime_map_path, original_image_path, output_dir)
-                    # extract_patches_from_heatmap(lime_map_path, original_image_path, output_dir)
+    # Assuming the second column contains the class labels
+    # labels = oct_file[1]
+
+    # # Count the occurrences of each class
+    # class_counts = labels.value_counts().sort_index()
+    # # Plot the histogram
+    # plt.figure(figsize=(8, 6))
+    # plt.bar(class_counts.index, class_counts.values, tick_label=['Class 0', 'Class 1', 'Class 2'])
+    # plt.xlabel('Class')
+    # plt.ylabel('Number of Images')
+    # plt.title('Distribution of Images Across Classes')
+    # plt.xticks(range(3))
+    # plt.savefig("fundus_traindata_distribution.png")
+
+    # output_dir = 'lime_extracted_patch'
+    # gradcam_map_path = '../outs-cam/1/Superimposed_1_TE-O_17_20140415111657635_R.jpg'
+    # original_image_path = '../data/Fundus_correct/1/TE-O_17_20140415111657635_R.jpg'
+    # extract_patches_from_heatmap(gradcam_map_path, original_image_path, output_dir)
+    # with open("lime_gradcam_patches.txt", "a+") as f:
+    #     for root, dirs, files in os.walk(image_dir):
+    #         for dir in dirs:
+    #             print(f"Processing directory {dir}")
+    #             # pdb.set_trace()
+    #             files = os.listdir(os.path.join(root, dir))
+    #             for filename in files:
+    #                 # print(f"Processing {filename}")
+    #                 if filename.startswith("Lime"):
+    #                     print(f"Processing {filename}")
+    #                     # Example usage
+    #                     original_image_name = "TE-"+filename.split("-")[1]
+    #                     lime_map_path = os.path.join(root, dir, filename)
+    #                     original_image_path = os.path.join('../data/Fundus_correct', dir, original_image_name)
+    #                     # pdb.set_trace()
+    #                     # lime_map_path = '../outs-cam/0/Lime_0_TE-Z_1_20140131114839533_R.jpg'
+    #                     # original_image_path = '../data/Fundus_correct/0/TE-Z_1_20140131114839533_R.jpg'
+    #                     output_dir = 'lime_extracted_patch'
+    #                     original_image_name_no_ext = original_image_name.split(".")[0]
+    #                     if dir == '0':
+    #                         output_dir = f'{output_dir}/0/{original_image_name_no_ext}'
+    #                     elif dir == '1':
+    #                         output_dir = f'{output_dir}/1/{original_image_name_no_ext}'
+    #                     elif dir == '2':
+    #                         output_dir = f'{output_dir}/2/{original_image_name_no_ext}'
+    #                     else:
+    #                         raise ValueError(f"Invalid directory {dir}")
+    #                     extract_patches_from_lime_map(lime_map_path, original_image_path, output_dir, file_obj=f)
+                        # extract_patches_from_heatmap(lime_map_path, original_image_path, output_dir, file_obj=f)
 
     # train_val_test_split()
 
@@ -394,12 +495,13 @@ if __name__ == "__main__":
     #     else:
     #         print(f"Invalid label {label} for image {image_path}")
     
-    # with open("annotations-oct.txt", "w") as file:
-    #     df = pd.read_csv("SNP_calls_combined_2020-06-16.csv", index_col=False, sep=',')
+    # with open("annotations-fundus-rs10922109.txt", "w") as file:
+    #     df = pd.read_csv("SNP_calls_combined_2021-03-04.csv", index_col=False, sep=',')
     #     # Filter the DataFrame for rows where gene value is "rs3750846"
-    #     filtered_df = df[df['SNP'] == 'rs3750846']
-    #     pdb.set_trace()
+    #     filtered_df = df[df['SNP'] == 'rs10922109']
+    #     # pdb.set_trace()
     #     nicola_ids = np.array(filtered_df.iloc[:, 0])
+    #     # Ceil the labels to convert them to integers
     #     labels = np.array(np.ceil(filtered_df.iloc[:, -1]))
     #     genes = np.array(filtered_df.iloc[:, 1])
     #     pdb.set_trace()
@@ -407,7 +509,7 @@ if __name__ == "__main__":
     #     for root, dirs, files in os.walk(image_dir):
     #         for filename in files:
     #             if filename.endswith(".jpg") or filename.endswith(".png"):
-    #                 nicola_id = filename.split("_")[1]
+    #                 nicola_id = filename.split("_")[0]
     #                 normalized_nicola_id = normalize_id(nicola_id)
     #                 for id in nicola_ids:
     #                     normalized_id = normalize_id(id)
