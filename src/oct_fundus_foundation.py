@@ -1,6 +1,6 @@
 import torch
 from torch.utils.data import DataLoader
-from dataset import CustomImageDataset
+from dataset import FoundationDataset
 import torchvision.transforms as transforms
 from PIL import Image
 import numpy as np
@@ -116,8 +116,8 @@ transform = transforms.Compose([
 ])
 
 # Define the datasets and data loaders for fundus and OCT images
-fundus_dataset = CustomImageDataset(txt_file="fundus_patches.txt", root_dir=".", transform=transform)
-oct_dataset = CustomImageDataset(txt_file="annotations-oct-sorted.txt", root_dir=".", transform=transform)
+fundus_dataset = FoundationDataset(txt_file="fundus_patches.txt", root_dir=".", transform=transform)
+oct_dataset = FoundationDataset(txt_file="annotations-oct-sorted.txt", root_dir=".", transform=transform)
 
 fundus_dataloader = DataLoader(fundus_dataset, batch_size=32)
 oct_dataloader = DataLoader(oct_dataset, batch_size=32)
@@ -135,7 +135,7 @@ def compute_loss(fundus_encoded, fundus_images, oct_encoded, oct_images, mse_los
     return mse_loss_value
 
 # Training loop
-num_epochs = 100
+num_epochs = 5
 for epoch in range(num_epochs):
     for fundus_images, oct_images in zip(fundus_dataloader, oct_dataloader):
         # Move images to device
@@ -150,6 +150,7 @@ for epoch in range(num_epochs):
         total_loss = compute_loss(fundus_encoded, fundus_images, oct_encoded, oct_images, mse_loss)
 
         logging.info(f"Epoch [{epoch+1}/{num_epochs}], Loss: {total_loss.item()}")
+        print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {total_loss.item()}")
 
         # Backward pass and optimization
         optimizer.zero_grad()

@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader, Dataset
 from dataset import CustomImageDataset, ExplanationsPatchesDataset, create_balanced_dataset
 import torchvision.models as models
 from sklearn.metrics import confusion_matrix , accuracy_score, classification_report, f1_score
-import logging
+import logging, datetime
 import pdb
 
 # Define the ResNet-50 model
@@ -108,6 +108,7 @@ class FocalLoss(nn.Module):
 # Initialize logging
 logging.basicConfig(filename='fundus_classifier.log', level=logging.INFO)
 logging.info("Starting Fundus Classifier")
+logging.info(datetime.datetime.now())
 
 # Initialize the model
 num_classes = 3
@@ -145,7 +146,7 @@ transform = transforms.Compose([
 ])
 
 # Create a custom dataset and dataloader
-dataset = CustomImageDataset(txt_file="fundus_annotate_train.txt", root_dir=".", transform=transform)
+dataset = CustomImageDataset(txt_file="fundus-rs10922109_train.txt", root_dir=".", transform=transform)
 
 # Initialize counters for each class
 class_counts = {0: 0, 1: 0, 2: 0}
@@ -174,7 +175,7 @@ dataloader = DataLoader(dataset, batch_size=128, shuffle=True)
 
 # dataloader = DataLoader(dataset, batch_size=128, shuffle=True)
 # test_dataset = datasets.ImageFolder(root='../data/Fundus', transform=transform)
-test_dataset = CustomImageDataset(txt_file="fundus_annotate_test.txt", root_dir=".", transform=transform)
+test_dataset = CustomImageDataset(txt_file="fundus-rs10922109_test.txt", root_dir=".", transform=transform)
 test_loader = DataLoader(test_dataset, batch_size=128, shuffle=True)
 
 # Define the device
@@ -185,8 +186,8 @@ if torch.cuda.device_count() > 1:
     model = nn.DataParallel(model)
 
 # Fine-tune the model
-alpha = torch.tensor([1.0, 2.0, 3.0]).to(device)
-criterion = FocalLoss(gamma=2.0, alpha=alpha)
+alpha = torch.tensor([1.0, 0.01, 0.05]).to(device)
+criterion = FocalLoss(gamma=3.0, alpha=alpha)
 logging.info(f"Criterion: {criterion}")
 # criterion = nn.CrossEntropyLoss()
 # criterion = nn.NLLLoss()
