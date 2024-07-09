@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 import torch.nn.functional as F
 import torch.optim as optim
-from torchvision.models import resnet50, resnet18, ResNet50_Weights, vgg16, inception_v3
+from torchvision.models import resnet50, resnet18, ResNet50_Weights, vgg16, inception_v3, vgg19
 import torch.nn as nn
 from torchvision import datasets
 import torchvision.transforms as transforms
@@ -20,6 +20,8 @@ class ResNetClassifier(nn.Module):
     def __init__(self, num_classes):
         super(ResNetClassifier, self).__init__()
         self.model = resnet50(weights='DEFAULT')
+        # self.model = resnet18(weights='DEFAULT')
+        # self.model = vgg19(weights='DEFAULT')
 
         # Optionally unfreeze some layers
         # for param in self.model.parameters():
@@ -28,16 +30,35 @@ class ResNetClassifier(nn.Module):
         # for param in self.model.layer4.parameters():
         #     param.requires_grad = True
 
+        # in_features = self.model.classifier[6].in_features
+        # self.model.classifier[6] = nn.Sequential(
+        #     nn.Linear(in_features, 1024),
+        #     nn.ReLU(),
+        #     nn.Dropout(0.2),
+        #     nn.Linear(1024, 512),
+        #     nn.ReLU(),
+        #     nn.Dropout(0.2),
+        #     nn.Linear(512, num_classes),
+            
         # Replace the final fully connected layer
         in_features = self.model.fc.in_features
         self.model.fc = nn.Sequential(
-            nn.Linear(in_features, 1024),
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(1024, 512),
-            nn.ReLU(),
-            nn.Dropout(0.2),
+            nn.Linear(in_features, 512),
+            # nn.ReLU(),
+            # nn.Dropout(0.2),
+            # nn.Linear(1024, 512),
+            # nn.ReLU(),
+            # nn.Dropout(0.2),
             nn.Linear(512, num_classes),
+        # in_features = self.model.classifier[-1].in_features
+        # self.model.classifier = nn.Sequential(
+        #     nn.Linear(in_features, 1024),
+        #     nn.ReLU(),
+        #     nn.Dropout(0.2),
+        #     nn.Linear(1024, 512),
+        #     nn.ReLU(),
+        #     nn.Dropout(0.2),
+        #     nn.Linear(512, num_classes),
             # nn.ReLU(),
             # nn.Dropout(0.2),
             # nn.Linear(256, num_classes),
@@ -47,7 +68,36 @@ class ResNetClassifier(nn.Module):
     def forward(self, x):
         x = self.model(x)
         return x
+    
+class InceptionV3Classifier(nn.Module):
+    def __init__(self, num_classes):
+        super(InceptionV3Classifier, self).__init__()
+        self.model = models.inception_v3(weights='DEFAULT')
 
+        in_features = self.model.fc.in_features
+        self.model.fc = nn.Sequential(
+            nn.Linear(in_features, 1024),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(1024, 512),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(512, num_classes),
+        )
+
+        self.model.AuxLogits.fc = nn.Sequential(
+            nn.Linear(self.model.AuxLogits.fc.in_features, 1024),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(1024, 512),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(512, num_classes),
+        )
+
+    def forward(self, x):
+        x, aux = self.model(x)
+        return x, aux
 # CLAHE
 class CLAHETransform:
     def __init__(self, clip_limit=5.0, tile_grid_size=(8, 8)):
@@ -82,43 +132,55 @@ class CLAHETransform:
 
 
 class FocalLoss(nn.Module):
-    def __init__(self, gamma=2.0, alpha=None, reduction='mean'):
+    def __init__(self, alpha=None, gamma=2, reduction='mean', device='cuda'):
         super(FocalLoss, self).__init__()
+        self.device = device
+        if alpha is not None:
+            assert len(alpha) == 3, "Alpha must be a list or tensor of length 3 for three classes"
+            self.alpha = torch.Tensor(alpha).to(device)
+        else:
+            self.alpha = None
         self.gamma = gamma
-        self.alpha = alpha
         self.reduction = reduction
 
     def forward(self, inputs, targets):
-        BCE_loss = nn.CrossEntropyLoss(reduction='none')(inputs, targets)
-        pt = torch.exp(-BCE_loss)  # Prevents nans when probability 0
-        F_loss = (1 - pt) ** self.gamma * BCE_loss
+        ce_loss = F.cross_entropy(inputs, targets, reduction='none')  # Compute cross-entropy loss
+        pt = torch.exp(-ce_loss)  # Convert log-loss to probability
 
         if self.alpha is not None:
-            alpha_t = self.alpha[targets]
-            F_loss = alpha_t * F_loss
+            # Convert targets to one-hot encoding
+            alpha_t = self.alpha[targets]  # Index alpha using targets to get the weight for each class
+            focal_loss = alpha_t * (1 - pt) ** self.gamma * ce_loss
+        else:
+            focal_loss = (1 - pt) ** self.gamma * ce_loss
 
         if self.reduction == 'mean':
-            return F_loss.mean()
+            return focal_loss.mean()
         elif self.reduction == 'sum':
-            return F_loss.sum()
+            return focal_loss.sum()
         else:
-            return F_loss
+            return focal_loss
 
+
+
+# Gene
+gene_name = "rs3750846"
 
 # Initialize logging
-logging.basicConfig(filename='fundus_classifier.log', level=logging.INFO)
+logging.basicConfig(filename=f'fundus_{gene_name}.log', level=logging.INFO)
 logging.info("Starting Fundus Classifier")
 logging.info(datetime.datetime.now())
 
 # Initialize the model
 num_classes = 3
-num_epochs = 120
+num_epochs = 150
 
 logging.info(f"Number of classes: {num_classes}")
 logging.info(f"Number of epochs: {num_epochs}")
 
 # ResNet
 model = ResNetClassifier(num_classes)
+# model = InceptionV3Classifier(num_classes)
 
 # VGG16
 # vgg16 = models.vgg16(pretrained=True)
@@ -146,7 +208,7 @@ transform = transforms.Compose([
 ])
 
 # Create a custom dataset and dataloader
-dataset = CustomImageDataset(txt_file="fundus-rs10922109_train.txt", root_dir=".", transform=transform)
+dataset = CustomImageDataset(txt_file=f'fundus-{gene_name}_train_augmented.txt', root_dir=".", transform=transform)
 
 # Initialize counters for each class
 class_counts = {0: 0, 1: 0, 2: 0}
@@ -167,15 +229,27 @@ logging.info(f"Class 2: {class_counts[2]} examples")
 
 # num_samples_per_class = max([sum(1 for _, label in dataset if label == i) for i in range(3)])
 # logging.info(f"Number of samples per class: {num_samples_per_class}")
-# # Create balanced dataset
+# # # Create balanced dataset
 # balanced_dataset = create_balanced_dataset(dataset, transform, num_samples_per_class)
 
+# # Number of samples in the balanced dataset
+# num_samples = len(balanced_dataset)
+# print(f"Number of samples in the balanced dataset: {num_samples}")
+# logging.info(f"Number of samples in the balanced dataset: {num_samples}")
+# # number of samples per class
+# class_counts = {0: 0, 1: 0, 2: 0}
+# for _, label in balanced_dataset:
+#     class_counts[label] += 1
+# logging.info(f"Class 0: {class_counts[0]} examples")
+# logging.info(f"Class 1: {class_counts[1]} examples")
+# logging.info(f"Class 2: {class_counts[2]} examples")
+
 # Create DataLoader
-dataloader = DataLoader(dataset, batch_size=128, shuffle=True)
+dataloader = DataLoader(dataset, batch_size=128)
 
 # dataloader = DataLoader(dataset, batch_size=128, shuffle=True)
 # test_dataset = datasets.ImageFolder(root='../data/Fundus', transform=transform)
-test_dataset = CustomImageDataset(txt_file="fundus-rs10922109_test.txt", root_dir=".", transform=transform)
+test_dataset = CustomImageDataset(txt_file=f'fundus-{gene_name}_test.txt', root_dir=".", transform=transform)
 test_loader = DataLoader(test_dataset, batch_size=128, shuffle=True)
 
 # Define the device
@@ -186,10 +260,18 @@ if torch.cuda.device_count() > 1:
     model = nn.DataParallel(model)
 
 # Fine-tune the model
-alpha = torch.tensor([1.0, 0.01, 0.05]).to(device)
-criterion = FocalLoss(gamma=3.0, alpha=alpha)
-logging.info(f"Criterion: {criterion}")
-# criterion = nn.CrossEntropyLoss()
+# class_frequencies = [class_counts[0], class_counts[1], class_counts[2]]
+
+# # Calculate inverse frequencies
+# inverse_frequencies = [1.0 / freq for freq in class_frequencies]
+
+# # Normalize inverse frequencies so they sum to 1
+# sum_inverse_frequencies = sum(inverse_frequencies)
+# alpha = [inv_freq / sum_inverse_frequencies for inv_freq in inverse_frequencies]
+
+# alpha = torch.tensor([4.0, 1.0, 1.5]).to(device)
+# criterion = FocalLoss(gamma=3.0, device=device)
+criterion = nn.CrossEntropyLoss()
 # criterion = nn.NLLLoss()
 # optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
 optimizer = torch.optim.SGD(model.parameters(), lr=1e-2, momentum=0.9)
@@ -234,7 +316,7 @@ for epoch in range(num_epochs):
     if f1 > best_f1:
         best_f1 = f1
         no_improvement_epochs = 0
-        torch.save(model.state_dict(), "best_fundus_classifier.pth")
+        torch.save(model.state_dict(), f'fundus_classifier_{gene_name}.pth')
     else:
         no_improvement_epochs += 1
 

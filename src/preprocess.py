@@ -265,27 +265,55 @@ def train_val_test_split():
         for line in test_lines:
             f.write(line)
 
-def train_test_split():
-    with open("annotations-fundus-rs10922109.txt", "r") as f:
-        pdb.set_trace()
-        lines = f.readlines()
-        # np.random.shuffle(lines)
-        
-        train_split = int(0.8 * len(lines))
+def train_test_split(id_list):
+    print(f"Received {len(id_list)} unique IDs")
+    
+    # Load the data from the CSV file
+    data = pd.read_csv("fundus-rs570618.txt", header=None, index_col=False, sep=',')
+    lines = data.values[:, 0]  # Assuming the first column contains the file paths
+    labels = data.values[:, 1]  # Assuming the second column contains the labels
 
-        train_lines = lines[:train_split]
-        test_lines = lines[train_split:]
+    # Create a dictionary to map IDs to (line, label) tuples
+    id_to_lines = {}
+    for idx, line in enumerate(lines):
+        id = line.split("/")[-1].split("_")[0]  # Assuming ID is the first element in each line
+        id = normalize_id(id)
+        if id in id_to_lines:
+            id_to_lines[id].append((line, labels[idx]))
+        else:
+            id_to_lines[id] = [(line, labels[idx])]
 
-    with open("fundus-rs10922109_train.txt", "w") as f:
-        for line in train_lines:
-            f.write(line)
+    print(f"Found {len(id_to_lines)} unique IDs")
+    
+    # Filter the dictionary to only include lines with IDs in id_list
+    id_to_lines = {k: v for k, v in id_to_lines.items() if k in id_list}
+    
+    # Shuffle the IDs
+    ids = list(id_to_lines.keys())
+    np.random.shuffle(ids)
+    
+    # Split the IDs into train and test sets
+    train_split = int(0.8 * len(ids))
+    train_ids = ids[:train_split]
+    test_ids = ids[train_split:]
+    
+    # Collect lines for train and test sets
+    train_lines = [item for id in train_ids for item in id_to_lines[id]]
+    test_lines = [item for id in test_ids for item in id_to_lines[id]]
+    
+    print(f"Train lines: {len(train_lines)}, Test lines: {len(test_lines)}")
 
-    with open("fundus-rs10922109_test.txt", "w") as f:
-        for line in test_lines:
-            f.write(line)
+    # Write the lines to the train and test files
+    with open("fundus-rs570618_train.txt", "w") as f:
+        for line, label in train_lines:
+            f.write(f"{line},{label}\n")
+    
+    with open("fundus-rs570618_test.txt", "w") as f:
+        for line, label in test_lines:
+            f.write(f"{line},{label}\n")
 
 
-def normalize_and_save_images(main_folder, output_main_folder, weights=[0.5, 0.5, 1.5]):
+def normalize_and_save_images(main_folder, output_main_folder, weights=[0.5, 0.5, 0.5]):
     def load_images(image_dir):
         images = []
         file_paths = []
@@ -334,8 +362,8 @@ def normalize_and_save_images(main_folder, output_main_folder, weights=[0.5, 0.5
         mean, std = calculate_mean_std(images)
         
         # Adjust the target mean and std with weights
-        adjusted_mean_target = global_mean * (1 - weight) + mean * weight
-        adjusted_std_target = global_std * (1 - weight) + std * weight
+        adjusted_mean_target = global_mean * (weight) + mean * (1 - weight)
+        adjusted_std_target = global_std * (weight) + std * (1 - weight)
         
         os.makedirs(output_subfolder, exist_ok=True)
         
@@ -349,13 +377,13 @@ def normalize_id(id):
     return id.replace('I', '1')
 
 if __name__ == "__main__":
-    image_dir = "../data/Fundus"
+    image_dir = "../data/Fundus_complete"
     # image_dir = "/data/B-scans"
     # oct_file = pd.read_csv("fundus_annotate_train.txt", index_col=False, header=None, sep=',')
     # image_dir = "../outs-cam"
 
-    output_dir = '../data/Fundus_normalized'
-    normalize_and_save_images(image_dir, output_dir)
+    # output_dir = '../data/Fundus_normalized'
+    # normalize_and_save_images(image_dir, output_dir)
 
     # Assuming the second column contains the class labels
     # labels = oct_file[1]
@@ -495,28 +523,35 @@ if __name__ == "__main__":
     #     else:
     #         print(f"Invalid label {label} for image {image_path}")
     
-    # with open("annotations-fundus-rs10922109.txt", "w") as file:
-    #     df = pd.read_csv("SNP_calls_combined_2021-03-04.csv", index_col=False, sep=',')
-    #     # Filter the DataFrame for rows where gene value is "rs3750846"
-    #     filtered_df = df[df['SNP'] == 'rs10922109']
-    #     # pdb.set_trace()
-    #     nicola_ids = np.array(filtered_df.iloc[:, 0])
-    #     # Ceil the labels to convert them to integers
-    #     labels = np.array(np.ceil(filtered_df.iloc[:, -1]))
-    #     genes = np.array(filtered_df.iloc[:, 1])
-    #     pdb.set_trace()
+    with open("fundus-rs570618.txt", "w") as file:
+        df = pd.read_csv("SNP_calls_combined_2021-03-04.csv", index_col=False, sep=',')
+        # Filter the DataFrame for rows where gene value is "rs3750846"
+        filtered_df = df[df['SNP'] == 'rs570618']
+        print(f"Length of filtered df: {len(filtered_df)}")
+        # print(f"Found {len(filtered_df)} rows with gene value 'rs10922109'")
+        # pdb.set_trace()
+        nicola_ids = np.array(filtered_df.iloc[:, 0])
+        print(f"Found {len(np.unique(nicola_ids))} ids")
+        # Ceil the labels to convert them to integers
+        labels = np.array(np.ceil(filtered_df.iloc[:, -1]))
+        genes = np.array(filtered_df.iloc[:, 1])
+        # pdb.set_trace()
 
-    #     for root, dirs, files in os.walk(image_dir):
-    #         for filename in files:
-    #             if filename.endswith(".jpg") or filename.endswith(".png"):
-    #                 nicola_id = filename.split("_")[0]
-    #                 normalized_nicola_id = normalize_id(nicola_id)
-    #                 for id in nicola_ids:
-    #                     normalized_id = normalize_id(id)
-    #                     # pdb.set_trace()
-    #                     if normalized_id == normalized_nicola_id:
-    #                         print(f"Found {filename} with id {id} and gene {genes[nicola_ids == id][0]}")
-    #                         file.write(os.path.join(root, filename) + "," + str(labels[nicola_ids == id][0]) + "\n")
+        files_written = []
+
+        for root, dirs, files in os.walk(image_dir):
+            for filename in files:
+                if filename.endswith(".jpg") or filename.endswith(".png"):
+                    nicola_id = filename.split("_")[0]
+                    normalized_nicola_id = normalize_id(nicola_id)
+                    for id in nicola_ids:
+                        normalized_id = normalize_id(id)
+                        # pdb.set_trace()
+                        if normalized_id == normalized_nicola_id and filename not in files_written:
+                            # print(f"Found {filename} with id {id} and gene {genes[nicola_ids == id][0]}")
+                            file.write(os.path.join(root, filename) + "," + str(labels[nicola_ids == id][0]) + "\n")
+                            files_written.append(filename)
+
     # patch_dir = "/data/Fundus/patches"
     # pdb.set_trace()
     # if os.path.exists(patch_dir):
@@ -526,7 +561,13 @@ if __name__ == "__main__":
     # create_fundus_files(image_dir, patch_dir, patch_size)
     # os.makedirs(patch_dir)
     # patch_size = 256
-    # train_test_split()
+    df = pd.read_csv("SNP_calls_combined_2021-03-04.csv", index_col=False, sep=',')
+    # Filter the DataFrame for rows where gene value is "rs3750846"
+    filtered_df = df[df['SNP'] == 'rs570618']
+    print(f"Length of filtered df: {len(filtered_df)}")
+    nicola_ids = np.array(filtered_df.iloc[:, 0])
+    print(f"Found {len(np.unique(nicola_ids))} ids")
+    train_test_split(id_list=nicola_ids)
     # create_fundus_files(image_dir, patch_dir, patch_size)
 
 
