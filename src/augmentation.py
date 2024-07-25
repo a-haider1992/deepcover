@@ -37,9 +37,9 @@ def augment_image(img):
         aug_list.append(rotated)
 
     # Add Gaussian noise
-    noise = np.random.normal(0, 25, img.shape).astype(np.uint8)
-    noisy = cv2.add(img, noise)
-    aug_list.append(noisy)
+    # noise = np.random.normal(0, 2, img.shape).astype(np.uint8)
+    # noisy = cv2.add(img, noise)
+    # aug_list.append(noisy)
 
     return aug_list
 
@@ -86,11 +86,11 @@ def generate_csv(base_dir, output_csv):
     df.to_csv(output_csv, index=False, header=False)
 
 def main():
-    csv_file = 'fundus-rs10922109_train.txt'  # Path to your CSV file
-    base_dir = '/data/fundus-rs10922109_train'  # Base directory to store labeled folders
+    csv_file = 'fundus-rs3750846_train.txt'  # Path to your CSV file
+    base_dir = '/data/fundus-rs3750846_train'  # Base directory to store labeled folders
     target_count = 5000  # Target number of images per label
 
-    output_csv = 'fundus-rs10922109_train_augmented.txt'  # Output CSV file path
+    output_csv = 'fundus-rs3750846_train_augmented.txt'  # Output CSV file path
 
     df = read_csv(csv_file)
     copy_images_to_folders(df, base_dir)
