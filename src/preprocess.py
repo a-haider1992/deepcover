@@ -316,12 +316,13 @@ def train_test_split_V2(id_list):
     print(f"Received {len(id_list)} unique IDs")
     
     # Load the data from the CSV file
-    data = pd.read_csv("oct-rs10922109.txt", header=None, index_col=False, sep=',')
+    data = pd.read_csv("oct-rs570618.txt", header=None, index_col=False, sep=',')
     lines = data.values[:, 0]  # Assuming the first column contains the file paths
     labels = data.values[:, 1]  # Assuming the second column contains the labels
 
     # Create a dictionary to map IDs to (line, label) tuples
     id_to_lines = {}
+    # pdb.set_trace()
     for idx, line in enumerate(lines):
         id = line.split("/")[-1].split("_")[1]  # Assuming ID is the first element in each line
         id = normalize_id(id)
@@ -354,15 +355,15 @@ def train_test_split_V2(id_list):
     print(f"Train lines: {len(train_lines)}, Validation lines: {len(validation_lines)}, Test lines: {len(test_lines)}")
 
     # Write the lines to the train, validation, and test files
-    with open("oct-rs10922109_train.txt", "w") as f:
+    with open("oct-rs570618_train.txt", "w") as f:
         for line, label in train_lines:
             f.write(f"{line},{label}\n")
     
-    with open("oct-rs10922109_validation.txt", "w") as f:
+    with open("oct-rs570618_validation.txt", "w") as f:
         for line, label in validation_lines:
             f.write(f"{line},{label}\n")
 
-    with open("oct-rs10922109_test.txt", "w") as f:
+    with open("oct-rs570618_test.txt", "w") as f:
         for line, label in test_lines:
             f.write(f"{line},{label}\n")
 
@@ -433,7 +434,8 @@ def normalize_id(id):
 if __name__ == "__main__":
     # image_dir = "../data/Fundus_complete"
     image_dir = "/data/B-scans"
-    oct_file = pd.read_csv("oct-rs10922109_test.txt", index_col=False, header=None, sep=',')
+    # oct_file = pd.read_csv("oct-rs570618_train.txt", index_col=False, header=None, sep=',')
+    patch_dir = "/data/oct-timebased"
     # image_dir = "../outs-cam"
 
     # output_dir = '../data/Fundus_normalized'
@@ -559,31 +561,31 @@ if __name__ == "__main__":
     #         print(f"Invalid label {label} for image {image_path}")
 
     # # Read each line of the file
-    for index, row in oct_file.iterrows():
-        # Extract the image path and label from the row
-        image_path, label = row[0], row[1]
-        if label == 0.0:
-            if not os.path.exists("/data/test/0"):
-                os.makedirs("/data/test/0")
-            shutil.move(image_path, "/data/test/0")
-            print(f"Copying {image_path} to /data/test/0")
-        elif label == 1.0:
-            if not os.path.exists("/data/test/1"):
-                os.makedirs("/data/test/1")
-            shutil.move(image_path, "/data/test/1")
-            print(f"Copying {image_path} to /data/test/1")
-        elif label == 2.0:
-            if not os.path.exists("/data/test/2"):
-                os.makedirs("/data/test/2")
-            shutil.move(image_path, "/data/test/2")
-            print(f"Copying {image_path} to /data/test/2")
-        else:
-            print(f"Invalid label {label} for image {image_path}")
+    # for index, row in oct_file.iterrows():
+    #     # Extract the image path and label from the row
+    #     image_path, label = row[0], row[1]
+    #     if label == 0.0:
+    #         if not os.path.exists("/data/test/0"):
+    #             os.makedirs("/data/test/0")
+    #         shutil.move(image_path, "/data/test/0")
+    #         print(f"Copying {image_path} to /data/test/0")
+    #     elif label == 1.0:
+    #         if not os.path.exists("/data/test/1"):
+    #             os.makedirs("/data/test/1")
+    #         shutil.move(image_path, "/data/test/1")
+    #         print(f"Copying {image_path} to /data/test/1")
+    #     elif label == 2.0:
+    #         if not os.path.exists("/data/test/2"):
+    #             os.makedirs("/data/test/2")
+    #         shutil.move(image_path, "/data/test/2")
+    #         print(f"Copying {image_path} to /data/test/2")
+    #     else:
+    #         print(f"Invalid label {label} for image {image_path}")
     
-    # with open("oct-rs10922109.txt", "w") as file:
+    # with open("oct-rs570618.txt", "w") as file:
     #     df = pd.read_csv("SNP_calls_combined_2021-03-04.csv", index_col=False, sep=',')
     #     # Filter the DataFrame for rows where gene value is "rs3750846"
-    #     filtered_df = df[df['SNP'] == 'rs10922109']
+    #     filtered_df = df[df['SNP'] == 'rs570618']
     #     print(f"Length of filtered df: {len(filtered_df)}")
     #     # print(f"Found {len(filtered_df)} rows with gene value 'rs10922109'")
     #     # pdb.set_trace()
@@ -621,24 +623,57 @@ if __name__ == "__main__":
     # patch_size = 256
     # df = pd.read_csv("SNP_calls_combined_2021-03-04.csv", index_col=False, sep=',')
     # Filter the DataFrame for rows where gene value is "rs3750846"
-    # filtered_df = df[df['SNP'] == 'rs10922109']
+    # filtered_df = df[df['SNP'] == 'rs570618']
     # print(f"Length of filtered df: {len(filtered_df)}")
     # nicola_ids = np.array(filtered_df.iloc[:, 0])
     # print(f"Found {len(np.unique(nicola_ids))} ids")
     # train_test_split_V2(id_list=nicola_ids)
     # create_fundus_files(image_dir, patch_dir, patch_size)
 
+    patients = []
+    files_copied = 0
+    for root, dirs, files in os.walk(image_dir):
+        pdb.set_trace()
+        df = pd.read_csv("/data/Layer-thickness/All_ThicknessMap_Retina.csv", index_col=False, sep=',')
+        print(f"Number of files in directory: {len(files)}")
+        assert len(files) > 0, "No files found in the directory"
+        assert len(files) == 641749, "Number of files are less than 641749"
+        for filename in files:
+            output_dir = None
+            if filename.endswith(".jpg") or filename.endswith(".png"):
+                patient_id = filename.split("_")[1]
+                # patient_id = normalize_id(patient_id)
+                pid = filename.split("_")[2]
 
-    # for root, dirs, files in os.walk(image_dir):
-    #     pdb.set_trace()
-    #     for filename in files:
-    #         if filename.endswith(".jpg") or filename.endswith(".png"):
-    #             identifier = root.split("/")[-1]
-    #             image_path = os.path.join(root, filename)
-    #             patches = create_patches(image_path, patch_size)
-    #             image_name = os.path.splitext(filename)[0]
-    #             output_dir = os.path.join(patch_dir, identifier, image_name)
-    #             os.makedirs(output_dir, exist_ok=True)
+                # if patient_id == "N10165":
+                #     pdb.set_trace()
+                
+                # if patient_id not in patients:
+                patients.append(patient_id)
+                filtered_df = df[df['Firstname'] == patient_id]
+                
+                if not filtered_df.empty:
+                    pid2 = filtered_df['ImageID'].values.astype(str)
+                    
+                    for i, p in enumerate(pid2):
+                        eye = filtered_df.iloc[i]['Eye']
+                        output_dir = os.path.join(patch_dir, patient_id, eye)
+                        print(f"Found patient {patient_id} with eye {eye}")
+                        
+                        if not os.path.exists(output_dir):
+                            os.makedirs(output_dir)
+
+                        if p == pid:
+                            src_path = os.path.join(root, filename)
+                            dst_path = os.path.join(output_dir, filename)
+                            shutil.move(src_path, dst_path)
+                            print(f"Moved {filename} to {output_dir}")
+                            files_copied += 1
+
+        print(f"Patients : {len(np.unique(patients))}")
+        print(f"Files copied: {files_copied}")
+        assert files_copied == len(files), "Number of files copied does not match number of files in the directory"
+
     #             for i, patch in enumerate(patches):
     #                 patch_path = os.path.join(output_dir, f"patch_{i}.jpg")
     #                 cv2.imwrite(patch_path, patch)
