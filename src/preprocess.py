@@ -632,6 +632,7 @@ if __name__ == "__main__":
 
     patients = []
     files_copied = 0
+    timepoints = {}
     for root, dirs, files in os.walk(image_dir):
         pdb.set_trace()
         df = pd.read_csv("/data/Layer-thickness/All_ThicknessMap_Retina.csv", index_col=False, sep=',')
@@ -642,8 +643,10 @@ if __name__ == "__main__":
             output_dir = None
             if filename.endswith(".jpg") or filename.endswith(".png"):
                 patient_id = filename.split("_")[1]
-                # patient_id = normalize_id(patient_id)
+                patient_id = normalize_id(patient_id)
                 pid = filename.split("_")[2]
+                if patient_id not in timepoints:
+                    timepoints[patient_id] = set()
 
                 # if patient_id == "N10165":
                 #     pdb.set_trace()
@@ -669,9 +672,18 @@ if __name__ == "__main__":
                             shutil.move(src_path, dst_path)
                             print(f"Moved {filename} to {output_dir}")
                             files_copied += 1
+                            timepoints[patient_id].add(pid)
 
-        print(f"Patients : {len(np.unique(patients))}")
+        
         print(f"Files copied: {files_copied}")
+        with open("oct-metadata.txt", "w") as f:
+            f.write(f"Patients : {len(np.unique(patients))}\n")
+            # Count total unique timepoints (pids) across all patients
+            total_unique_timepoints = sum(len(pids) for pids in timepoints.values())
+            f.write(f"Average unique timepoints per patient: {total_unique_timepoints / len(timepoints)}\n")
+            print(f"Patients : {len(np.unique(patients))}")
+            print(f"Average unique timepoints per patient: {total_unique_timepoints / len(timepoints)}")
+            
         assert files_copied == len(files), "Number of files copied does not match number of files in the directory"
 
     #             for i, patch in enumerate(patches):
