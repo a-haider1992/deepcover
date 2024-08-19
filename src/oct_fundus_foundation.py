@@ -1,48 +1,14 @@
-import torch
-from torch.utils.data import DataLoader
-from dataset import FoundationDataset
-import torchvision.transforms as transforms
+
+import os
 from PIL import Image
-import numpy as np
-import cv2
-from piqa import SSIM
-
+import torch
+from torch.utils.data import Dataset, DataLoader
 import torch.nn as nn
-import torch.optim as optim
+import torch.nn.functional as F
+from torchvision import transforms
 import timm
+from pytorch_ssim import ssim
 import logging
-
-# Define the autoencoder model
-class Autoencoder(nn.Module):
-    def __init__(self, swin_encoder):
-        super(Autoencoder, self).__init__()
-        self.encoder = swin_encoder
-        self.encoder.head.fc = nn.Sequential(
-            nn.Linear(1024, 512),
-            nn.ReLU(),
-            nn.Linear(512, 350)  # Adjust this as needed for your latent dimension
-        )
-        self.decoder = nn.Sequential(
-            nn.Linear(350, 512),
-            nn.ReLU(),
-            nn.Linear(512, 1024),
-            nn.ReLU(),
-            nn.Linear(1024, 2048),
-            nn.ReLU(),
-            nn.Linear(2048, 3 * 224 * 224),  # Output size matches input size (3, 224, 224)
-        )
-
-    def forward(self, x):
-        # Forward pass through encoder
-        encoded = self.encoder(x)
-        
-        # Forward pass through decoder
-        decoded = self.decoder(encoded)
-        
-        # Reshape the decoded output to (batch_size, 3, 224, 224)
-        decoded = decoded.view(-1, 3, 224, 224)
-        
-        return decoded
 
 class CLAHETransform:
     def __init__(self, clip_limit=5.0, tile_grid_size=(8, 8)):
@@ -72,93 +38,148 @@ class CLAHETransform:
         # Convert numpy array back to PIL image
         img = Image.fromarray(img)
         return img
-    
-class SSIMLoss(SSIM):
-    def forward(self, x, y):
-        return 1. - super().forward(x, y)
 
 
 logging.basicConfig(filename='vae.log', level=logging.INFO)
 logging.info('Started training the OCT_FUNDUS Foundation model')
-# Load the pretrained Swin Transformer encoder
-swin_encoder = timm.create_model('swin_base_patch4_window7_224', pretrained=True, num_classes=0)
 
-# Create the autoencoder model
-autoencoder = Autoencoder(swin_encoder)
+# Dataset class to handle paired images
+class PairedOCTFundusDataset(Dataset):
+    def __init__(self, oct_dir, fundus_dir, transform=None):
+        self.oct_images = sorted(os.listdir(oct_dir))
+        self.fundus_images = sorted(os.listdir(fundus_dir))
+        self.oct_dir = oct_dir
+        self.fundus_dir = fundus_dir
+        self.transform = transform
+        
+        # Ensure the datasets are of the same length
+        assert len(self.oct_images) == len(self.fundus_images), "Mismatch in number of OCT and Fundus images"
 
-# Check for CUDA
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    def __len__(self):
+        return len(self.oct_images)
 
-# Move model to device
-autoencoder = autoencoder.to(device)
+    def __getitem__(self, idx):
+        # Load OCT and Fundus images
+        oct_img_path = os.path.join(self.oct_dir, self.oct_images[idx])
+        fundus_img_path = os.path.join(self.fundus_dir, self.fundus_images[idx])
+        
+        oct_image = Image.open(oct_img_path).convert('RGB')
+        fundus_image = Image.open(fundus_img_path).convert('RGB')
+        
+        # Apply transforms if specified
+        if self.transform:
+            oct_image = self.transform(oct_image)
+            fundus_image = self.transform(fundus_image)
+        
+        return oct_image, fundus_image
 
-# Wrap the model with DataParallel
-if torch.cuda.device_count() > 1:
-    autoencoder = nn.DataParallel(autoencoder)
+# Vision Transformer-based encoder with weight sharing
+class SharedViTEncoder(nn.Module):
+    def __init__(self, vit_model_name='vit_base_patch16_224', embed_dim=768, shared_depth=12):
+        super(SharedViTEncoder, self).__init__()
+        self.shared_encoder = timm.create_model(vit_model_name, pretrained=True)
+        self.shared_blocks = nn.ModuleList(self.shared_encoder.blocks[:shared_depth])
+        self.oct_blocks = nn.ModuleList(self.shared_encoder.blocks[shared_depth:])
+        self.fundus_blocks = nn.ModuleList(self.shared_encoder.blocks[shared_depth:])
+        self.patch_embed = self.shared_encoder.patch_embed
+        self.cls_token = self.shared_encoder.cls_token
+        self.pos_embed = self.shared_encoder.pos_embed
+        self.pos_drop = self.shared_encoder.pos_drop
+        self.norm = self.shared_encoder.norm
 
-# Define the loss function
-mse_loss = nn.MSELoss()
+    def forward(self, oct_img, fundus_img):
+        B = oct_img.shape[0]
+        oct_x = self.patch_embed(oct_img)
+        fundus_x = self.patch_embed(fundus_img)
+        oct_x = torch.cat((self.cls_token.expand(B, -1, -1), oct_x), dim=1)
+        fundus_x = torch.cat((self.cls_token.expand(B, -1, -1), fundus_x), dim=1)
+        oct_x = self.pos_drop(oct_x + self.pos_embed)
+        fundus_x = self.pos_drop(fundus_x + self.pos_embed)
+        for blk in self.shared_blocks:
+            oct_x = blk(oct_x)
+            fundus_x = blk(fundus_x)
+        for blk in self.oct_blocks:
+            oct_x = blk(oct_x)
+        for blk in self.fundus_blocks:
+            fundus_x = blk(fundus_x)
+        oct_features = self.norm(oct_x)
+        fundus_features = self.norm(fundus_x)
+        return oct_features[:, 0], fundus_features[:, 0]
 
-# Define the optimizer
-optimizer = optim.SGD(autoencoder.parameters(), lr=1e-2, momentum=0.9)
+# Linear Decoder
+class LinearDecoder(nn.Module):
+    def __init__(self, embed_dim=768, img_size=224, num_channels=3):
+        super(LinearDecoder, self).__init__()
+        self.fc = nn.Linear(embed_dim, img_size * img_size * num_channels)
+        self.img_size = img_size
+        self.num_channels = num_channels
 
-image_size = 256  # Resize to 256x256
-crop_size = 224  # Center crop to 224x224
+    def forward(self, x):
+        x = self.fc(x)
+        x = x.view(-1, self.num_channels, self.img_size, self.img_size)
+        return x
 
-transform = transforms.Compose([
-    transforms.RandomHorizontalFlip(),
-    transforms.RandomVerticalFlip(),
-    transforms.Resize([image_size, image_size]),
-    transforms.CenterCrop(crop_size),  # Apply center crop
-    CLAHETransform(clip_limit=1.0, tile_grid_size=(8, 8)),  # Apply CLAHE
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-])
+# Autoencoder Model
+class Autoencoder(nn.Module):
+    def __init__(self, vit_model_name='vit_base_patch16_224', embed_dim=768, img_size=224, num_channels=3, shared_depth=12):
+        super(Autoencoder, self).__init__()
+        self.encoder = SharedViTEncoder(vit_model_name=vit_model_name, embed_dim=embed_dim, shared_depth=shared_depth)
+        self.oct_decoder = LinearDecoder(embed_dim=embed_dim, img_size=img_size, num_channels=num_channels)
+        self.fundus_decoder = LinearDecoder(embed_dim=embed_dim, img_size=img_size, num_channels=num_channels)
 
-# Define the datasets and data loaders for fundus and OCT images
-fundus_dataset = FoundationDataset(txt_file="fundus_patches.txt", root_dir=".", transform=transform)
-oct_dataset = FoundationDataset(txt_file="annotations-oct-sorted.txt", root_dir=".", transform=transform)
+    def forward(self, oct_img, fundus_img):
+        oct_features, fundus_features = self.encoder(oct_img, fundus_img)
+        reconstructed_oct = self.oct_decoder(oct_features)
+        reconstructed_fundus = self.fundus_decoder(fundus_features)
+        return reconstructed_oct, reconstructed_fundus
 
-fundus_dataloader = DataLoader(fundus_dataset, batch_size=32)
-oct_dataloader = DataLoader(oct_dataset, batch_size=32)
+# Loss Function
+def loss_function(reconstructed_oct, target_oct, reconstructed_fundus, target_fundus):
+    mse_loss_oct = F.mse_loss(reconstructed_oct, target_oct)
+    mse_loss_fundus = F.mse_loss(reconstructed_fundus, target_fundus)
+    ssim_loss_oct = 1 - ssim(reconstructed_oct, target_oct)
+    ssim_loss_fundus = 1 - ssim(reconstructed_fundus, target_fundus)
+    total_loss = mse_loss_oct + ssim_loss_oct + mse_loss_fundus + ssim_loss_fundus
+    return total_loss
 
-# Define the compute_loss function
-def compute_loss(fundus_encoded, fundus_images, oct_encoded, oct_images, mse_loss):
-    # fundus_images = fundus_images.view(-1, 3*224*224)
-    # oct_images = oct_images.view(-1, 3*224*224)
-    # fundus_encoded = fundus_encoded.view(-1, 3*224*224)
-    # oct_encoded = oct_encoded.view(-1, 3*224*224)
+# Main script
+if __name__ == "__main__":
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    mse_loss_value = mse_loss(fundus_encoded, fundus_images) + mse_loss(oct_encoded, oct_images)
-    # ssim = SSIMLoss().to(device)
-    # ssim_loss = ssim(fundus_encoded, fundus_images) + ssim(oct_encoded, oct_images)
-    return mse_loss_value
+    # Example transform: resizing, normalization, etc.
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
 
-# Training loop
-num_epochs = 5
-for epoch in range(num_epochs):
-    for fundus_images, oct_images in zip(fundus_dataloader, oct_dataloader):
-        # Move images to device
-        fundus_images = fundus_images.to(device)
-        oct_images = oct_images.to(device)
+    # Define dataset and dataloader
+    oct_dir = 'data/OCT'
+    fundus_dir = 'data/Fundus'
+    dataset = PairedOCTFundusDataset(oct_dir=oct_dir, fundus_dir=fundus_dir, transform=transform)
+    dataloader = DataLoader(dataset, batch_size=8, shuffle=True, num_workers=4)
 
-        # Forward pass
-        fundus_encoded = autoencoder(fundus_images)
-        oct_encoded = autoencoder(oct_images)
+    # Initialize the autoencoder
+    autoencoder = Autoencoder(img_size=224, num_channels=3).to(device)
 
-        # Compute the loss
-        total_loss = compute_loss(fundus_encoded, fundus_images, oct_encoded, oct_images, mse_loss)
+    optimizer = torch.optim.Adam(autoencoder.parameters(), lr=1e-4)
 
-        logging.info(f"Epoch [{epoch+1}/{num_epochs}], Loss: {total_loss.item()}")
-        print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {total_loss.item()}")
+    # Training loop
+    for epoch in range(10):  # Example: 10 epochs
+        autoencoder.train()
+        for oct_imgs, fundus_imgs in dataloader:
+            oct_imgs = oct_imgs.to(device)
+            fundus_imgs = fundus_imgs.to(device)
 
-        # Backward pass and optimization
-        optimizer.zero_grad()
-        total_loss.backward()
-        optimizer.step()
+            # Forward pass
+            reconstructed_oct, reconstructed_fundus = autoencoder(oct_imgs, fundus_imgs)
+            
+            # Compute loss
+            loss = loss_function(reconstructed_oct, oct_imgs, reconstructed_fundus, fundus_imgs)
+            
+            # Backpropagation and optimization
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
-    print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {total_loss.item()}")
-    torch.save(autoencoder.state_dict(), "autoencoder_oct_fundus.pth")
-
-# Save the trained autoencoder model
-torch.save(autoencoder.state_dict(), "autoencoder_oct_fundus.pth")
+        print(f"Epoch [{epoch+1}/10], Loss: {loss.item()}")
